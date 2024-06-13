@@ -1,0 +1,36 @@
+{
+    "os": "macOS-13.5-arm64-arm-64bit",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-06-13T14:51:34.887559",
+    "startedAt": "2024-06-13T14:51:27.915301",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "<python with no main file>",
+    "codePathLocal": null,
+    "git": {
+        "remote": "git@github.com:CharlesHiggins-stai/RL-LRP.git",
+        "commit": "aef01e13034a353a9b2364d5fcb950276d9788de"
+    },
+    "email": "charles.higgins@kcl.ac.uk",
+    "root": "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP",
+    "host": "Charless-MacBook-Pro-3.local",
+    "username": "charleshiggins",
+    "executable": "/Users/charleshiggins/miniconda3/envs/minatar/bin/python",
+    "cpu_count": 12,
+    "cpu_count_logical": 12,
+    "disk": {
+        "/": {
+            "total": 460.4317207336426,
+            "used": 180.21430206298828
+        }
+    },
+    "gpuapple": {
+        "type": "Apple M2 Max",
+        "vendor": "sppci_vendor_Apple"
+    },
+    "memory": {
+        "total": 64.0
+    }
+}
