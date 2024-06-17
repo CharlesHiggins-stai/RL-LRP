@@ -43,13 +43,16 @@ class SimpleRNet(nn.Module):
             nn.ReLU()
         )
         self.classifier = nn.Sequential(
-            nn.Linear(320, 50),
+            nn.Linear(8000, 50),
             nn.ReLU(),
             nn.Linear(50, 10)
         )
 
     def forward(self, x):
         x = self.features(x)
-        x = x.view(-1, 320)  # Flatten the output for the classifier
+        # print("this is the shape that needs to be flattened")
+        # print(x.shape)
+        x = x.view(-1, 8000)  # Flatten the output for the classifier
         x = self.classifier(x)
+        x = torch.nn.functional.log_softmax(x, dim=1)
         return x

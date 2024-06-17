@@ -1,0 +1,37 @@
+{
+    "os": "macOS-13.5-arm64-arm-64bit",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-06-14T19:22:32.492567",
+    "startedAt": "2024-06-14T19:22:31.627694",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP/testing_sandbox/mnist_test.py",
+    "codePathLocal": "testing_sandbox/mnist_test.py",
+    "codePath": "testing_sandbox/mnist_test.py",
+    "git": {
+        "remote": "git@github.com:CharlesHiggins-stai/RL-LRP.git",
+        "commit": "67fa628ebba82ec05a1eaca8a3fe5933a972fb35"
+    },
+    "email": "charles.higgins@kcl.ac.uk",
+    "root": "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP",
+    "host": "Charless-MacBook-Pro-3.local",
+    "username": "charleshiggins",
+    "executable": "/Users/charleshiggins/miniconda3/envs/minatar/bin/python",
+    "cpu_count": 12,
+    "cpu_count_logical": 12,
+    "disk": {
+        "/": {
+            "total": 460.4317207336426,
+            "used": 180.4525146484375
+        }
+    },
+    "gpuapple": {
+        "type": "Apple M2 Max",
+        "vendor": "sppci_vendor_Apple"
+    },
+    "memory": {
+        "total": 64.0
+    }
+}
