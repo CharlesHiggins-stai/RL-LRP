@@ -18,9 +18,9 @@ def track_activations(wrapper):
         wrapper.record_activation('ReLU', input, output)
         return output
     
-    def wrapped_max_pool2d(input, *args, **kwargs):
-        output = original_max_pool2d(input, *args, **kwargs)
-        wrapper.record_activation('MaxPool2d', input,output)
+    def wrapped_max_pool2d(input, stride, *args, **kwargs):
+        output, indices = original_max_pool2d(input, stride, return_indices=True)
+        wrapper.record_activation('MaxPool2d', input, output, extra={"indices": indices, "stride": stride})
         return output
     
     def wrapped_log_softmax(input, *args, **kwargs):
@@ -50,6 +50,7 @@ class WrapperNet(nn.Module):
         self.executed_layers = []
         self.activations_inputs = []
         self.activation_outputs = []
+        self.info = []
         
         # Register hooks for the layers
         for name, module in self.model.named_modules():
@@ -60,11 +61,13 @@ class WrapperNet(nn.Module):
         self.executed_layers.append((module.__class__.__name__, module))
         self.activations_inputs.append(input)
         self.activation_outputs.append(output)
+        self.info.append({}) # placeholder for extra information
     
-    def record_activation(self, name, input, output):
+    def record_activation(self, name, input, output, extra = {}):
         self.executed_layers.append(name)
         self.activations_inputs.append(input)
         self.activation_outputs.append(output)
+        self.info.append(extra)
 
     def forward(self, x):
         self.executed_layers = []
@@ -73,14 +76,17 @@ class WrapperNet(nn.Module):
         with track_activations(self):
             y =  self.model(x)
         relevance = diff_softmax(y)
-        for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs))):
+        for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
             if relevance.shape != layer[2].shape:
+            # if there is a reshaping operation, we need to reshape the relevance tensor
+                    # print(f"reshaping in backwards pass: {relevance.shape}")
                     relevance = relevance.view(layer[2].shape)
+                    # print(f"new shape {relevance.shape}")
             if isinstance(layer[0], tuple):
-                # if there is a reshaping operation, we need to reshape the relevance tensor
+            # If layer is layer or simply activation function, we need to treat differently 
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
             else:
-                relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0])
+                relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
         return relevance
 
     def get_layers_and_activation_lists(self):
