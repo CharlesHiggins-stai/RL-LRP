@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import copy
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from contextlib import contextmanager
 from .lrp_rules import reverse_layer, diff_softmax
 
@@ -25,9 +24,11 @@ def track_activations(wrapper):
         return output
     
     def wrapped_log_softmax(input, *args, **kwargs):
-        output = original_log_softmax(input, *args, **kwargs)
-        wrapper.record_activation('LogSoftmax', input, output)
-        return output
+        # don't do anything -- try to ignore the log_softmax layer
+        # under the assumption this is the last layer
+        # output = original_log_softmax(input, *args, **kwargs)
+        # wrapper.record_activation('LogSoftmax', input, output)
+        return input
     
     F.relu = wrapped_relu
     F.max_pool2d = wrapped_max_pool2d

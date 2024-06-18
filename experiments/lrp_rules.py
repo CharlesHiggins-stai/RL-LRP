@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, relevance:torch.Tensor, layer_type:str=None):
-    print(f"reversing layer of type {layer_type}")
+    # print(f"reversing layer of type {layer_type}")
     if isinstance(layer, torch.nn.Linear):
         R = lrp_linear(layer, activations_at_start, relevance)
     elif isinstance(layer, torch.nn.Conv2d):
@@ -70,7 +70,8 @@ def reverse_log_softmax(activation, R):
 
 def diff_softmax(input, temperature=1.0):
     """
-    A function to generate a differential alternative to the softmax function.
+    A function to generate a differential alternative to the softmax function for the arg-max operation
+    It's a smooth function, which essentially focuses on the lagest value (i.e. the output of the softmax function)
 
     Args:
         input (torch.Tensor): Input to be transformed.
