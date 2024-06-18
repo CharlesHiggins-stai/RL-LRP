@@ -69,19 +69,20 @@ class WrapperNet(nn.Module):
         self.activation_outputs.append(output)
         self.info.append(extra)
 
-    def forward(self, x):
+    def forward(self, x, target_class = None):
         self.executed_layers = []
         self.activations_inputs = []
         self.activation_outputs = []
         with track_activations(self):
             y =  self.model(x)
         relevance = diff_softmax(y)
+        if target_class != None:
+            relevance = relevance[target_class]
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
-            if relevance.shape != layer[2].shape:
-            # if there is a reshaping operation, we need to reshape the relevance tensor
-                    # print(f"reshaping in backwards pass: {relevance.shape}")
+            if index != 0 and relevance.shape != layer[2].shape:
+            # if there is a reshaping/view operation, we need to reshape the relevance tensor
+            # in the backwards pass to match the shape of the input tensor
                     relevance = relevance.view(layer[2].shape)
-                    # print(f"new shape {relevance.shape}")
             if isinstance(layer[0], tuple):
             # If layer is layer or simply activation function, we need to treat differently 
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
