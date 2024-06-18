@@ -73,12 +73,8 @@ class WrapperNet(nn.Module):
             y =  self.model(x)
         relevance = diff_softmax(y)
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs))):
-            # print(f'Layer {index}: {layer[0]}')
-            # print(relevance.shape, layer[2][0].shape)
             if relevance.shape != layer[2].shape:
-                    # print(f"mis matching shapes: {relevance.shape} and {layer[2].shape}")
                     relevance = relevance.view(layer[2].shape)
-                    # print(f"reshaped relevance: {relevance.shape}")
             if isinstance(layer[0], tuple):
                 # if there is a reshaping operation, we need to reshape the relevance tensor
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
