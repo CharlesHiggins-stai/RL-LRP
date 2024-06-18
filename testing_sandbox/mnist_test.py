@@ -6,11 +6,11 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import wandb
-from experiments import DiffLrpWrapper, SimpleRNet, apply_threshold, CosineDistanceLoss
+from experiments import SimpleNet, apply_threshold, CosineDistanceLoss, WrapperNet
 
 
 def test_inner_net(wrapped_model, device, test_loader):
-    net = wrapped_model.net
+    net = wrapped_model.model
     new_criterion = nn.CrossEntropyLoss()
     test_loss = 0
     correct = 0
@@ -37,7 +37,7 @@ def test(wrapped_model, device, test_loader):
     for data, target in test_loader:
         data, target = data.to(device), target.to(device)
         target_map = apply_threshold(data, threshold=0.98)
-        output = wrapped_model(data, target.unsqueeze(1))
+        output = wrapped_model(data, target)
         test_loss += criterion(output, target_map).item()  # sum up batch loss
             # pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             # correct += pred.eq(target.view_as(pred)).sum().item()
@@ -56,7 +56,7 @@ def train(wrapped_model, device, train_loader, optimizer, epoch, target_accuracy
         target_map = apply_threshold(data, threshold=0.98)
         optimizer.zero_grad()
         # print(target.unsqueeze(1))
-        output = wrapped_model(data, target.unsqueeze(1))
+        output = wrapped_model(data, target)
         loss = criterion(output, target_map)
         loss.backward()
         optimizer.step()
@@ -90,12 +90,13 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Initialize the network and optimizer for the underlying network
-    model = SimpleRNet()
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    model = SimpleNet()
     # now wrap the network in the LRP class
-    wrapped_model = DiffLrpWrapper(model)
+    wrapped_model = WrapperNet(model)
+    optimizer = optim.Adam(wrapped_model.parameters(), lr=1e-3)
+
     
-    criterion = nn.MSELoss()
+    criterion = CosineDistanceLoss()
 
     # Define the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
