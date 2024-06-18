@@ -2,154 +2,89 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from contextlib import contextmanager
+from .lrp_rules import reverse_layer, diff_softmax
 
-class DiffLrpWrapper(nn.Module):
-    def __init__(self, net):
-        super().__init__()
-        assert isinstance(net, nn.Module), f"Expected net to be an instance of nn.Module, got {type(net)}"
-        self.net = net
-        self.activations = {}
-        self.outputs = {}
-        self._register_hooks()
-
-    def _register_hooks(self):
-        # Register a forward hook on each module
-        for name, module in self.net.named_modules():
-            # Avoid registering hooks on containers
-            if len(list(module.children())) == 0:
-                module.register_forward_hook(self._save_activation(name))
-
-    def _save_activation(self, name):
-        # This method returns a hook function
-        def hook(module, input, output):
-            # saving activation input so that we can calculate the relevance later...
-            self.activations[name] = input[0]
-            self.outputs[name] = output.detach()
-        return hook
-
-    def forward(self, x, target_class:torch.Tensor= None):
-        if target_class != None: 
-            assert x.shape[0] == target_class.shape[0], f"Expected x and target_class to have the same batch size, got {x.shape[0]} and {target_class.shape[0]}"
-        # Forward pass through the network
-        initial_out = self.net(x)
-        # Create a mask that zeros out all elements except for the target class
-        if target_class != None:
-            mask = torch.zeros_like(initial_out)
-            mask[torch.arange(mask.size(0)), target_class.squeeze()] = 1  # Ensure target_class is either a scalar or has the same batch size as x
-            # Apply the mask to propogate relenace forwards
-            relevance = initial_out * mask
-        else:
-            relevance = initial_out
-        # loop backwards from output to input layer
-        for name, actual_module in list(self.net.named_modules())[::-1]:
-            if len(list(actual_module.children())) == 0:
-                # if the module is a leaf module, apply LRP
-                relevance = self._apply_lrp(name, actual_module, relevance.detach())
-        # normalise output so that it sums to 1 in total --- all outputs are also in same range
-        # sum_of_pixels = relevance.sum(dim=[2, 3], keepdim=True)
-        # relevance = relevance / sum_of_pixels
-        # print(f"size of hooks dict: {len(self.activations)}")
-        return relevance
+@contextmanager
+def track_activations(wrapper):
+    original_relu = F.relu
+    original_max_pool2d = F.max_pool2d
+    original_log_softmax = F.log_softmax
     
+    def wrapped_relu(input, *args, **kwargs):
+        output = original_relu(input, *args, **kwargs)
+        wrapper.record_activation('ReLU', input, output)
+        return output
+    
+    def wrapped_max_pool2d(input, *args, **kwargs):
+        output = original_max_pool2d(input, *args, **kwargs)
+        wrapper.record_activation('MaxPool2d', input,output)
+        return output
+    
+    def wrapped_log_softmax(input, *args, **kwargs):
+        output = original_log_softmax(input, *args, **kwargs)
+        wrapper.record_activation('LogSoftmax', input, output)
+        return output
+    
+    F.relu = wrapped_relu
+    F.max_pool2d = wrapped_max_pool2d
+    F.log_softmax = wrapped_log_softmax
+    
+    try:
+        yield
+    finally:
+        F.relu = original_relu
+        F.max_pool2d = original_max_pool2d
+        F.log_softmax = original_log_softmax
 
-    def _apply_lrp(self, name:str, layer:torch.nn.Module, relevance_to_be_propagaed:torch.Tensor):
-        # Get the activation of the module
-        layer_activation_values = self.activations[name]
-        # check datatypes coming through
-        assert isinstance(layer_activation_values, torch.Tensor)
-        assert isinstance(layer, nn.Module)
-        assert isinstance(relevance_to_be_propagaed, torch.Tensor)
-        # Check that the shape of the layer outputs and relevance are the same
-        if not self.outputs[name].shape == relevance_to_be_propagaed.shape:
-            # print(f"shapes didn't match for layer {name}")
-            relevance_to_be_propagaed = relevance_to_be_propagaed.view(self.outputs[name].shape)
-        # Get the relevance of the output & apply LRP
-        relevance = self._reverse_layer_(layer_activation_values, layer, relevance_to_be_propagaed)
-        return relevance
-    
-    def _reverse_layer_(self, activations_at_start:torch.Tensor, layer:torch.nn.Module, relevance:torch.Tensor):
-        # print(f"reversing layer of type {type(layer)}")
-        if isinstance(layer, torch.nn.Linear):
-            R = self.lrp_linear(layer, activations_at_start, relevance)
-        elif isinstance(layer, torch.nn.Conv2d):
-            R = self.lrp_conv2d(layer, activations_at_start, relevance)
-        elif isinstance(layer, torch.nn.ReLU):
-            # print('encounterted a ReLu Layer')
-            R = relevance * (activations_at_start > 0).float()
-        elif isinstance(layer, torch.nn.LogSoftmax):
-            R = self.reverse_log_softmax(layer, activations_at_start, relevance)
-        else:
-            print(f"Layer type {type(layer)} not supported")
-        return R
-    
-    def lrp_linear(self, layer, activation, R, eps=1e-6):
-        """
-        LRP for a linear layer.
-        Arguments:
-            layer: the linear layer (nn.Linear)
-            R: relevance scores from the previous layer (Tensor)
-            eps: small value to avoid division by zero (float)
-        Returns:
-            relevance scores for the input of this layer (Tensor)
-        """
-        W = layer.weight
-        # Z = W @ activation.t() + layer.bias[:, None] + eps
-        Z = layer.forward(activation)
-        S = R / Z
-        C = W.t() @ S.t()
-        R_new = activation * C.t()
-        return R_new
 
-    def lrp_conv2d(self, layer, activation, R, eps=1e-6):
-        """
-        LRP for a convolutional layer.
-        Arguments:
-            layer: the convolutional layer (nn.Conv2d)
-            R: relevance scores from the previous layer (Tensor)
-            eps: small value to avoid division by zero (float)
-        Returns:
-            relevance scores for the input of this layer (Tensor)
-        """
-        W = layer.weight
-        X = activation
-        Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) + eps
-        S = R / Z
-        C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
-        R_new = X * C
-        return R_new
-    
-    def reverse_log_softmax(self, layer, activation, R):
-        """
-        Reverse the log_softmax operation.
-        Arguments:
-            layer: the log_softmax layer (nn.LogSoftmax)
-            activation: the input activation to the log_softmax layer (Tensor)
-            R: relevance scores from the previous layer (Tensor)
-        Returns:
-            relevance scores for the input of this layer (Tensor)
-        """
-        # Assuming activation are log probabilities
-        probs = torch.exp(activation)
-        probs_sum = probs.sum(dim=1, keepdim=True)
-        return R * probs / probs_sum
+# Wrapper class to track layers and activations
+class WrapperNet(nn.Module):
+    def __init__(self, model):
+        super(WrapperNet, self).__init__()
+        self.model = model
+        self.executed_layers = []
+        self.activations_inputs = []
+        self.activation_outputs = []
         
-    def get_activations(self):
-        return self.activations
+        # Register hooks for the layers
+        for name, module in self.model.named_modules():
+            if not isinstance(module, nn.Sequential) and not isinstance(module, WrapperNet) and not len(list(module.children())) > 0:
+                module.register_forward_hook(self.forward_hook)
     
-    def DEPRECIATED_reverse_layer_(self, activations_at_start:torch.Tensor, actual_module:torch.nn.Module, relevance:torch.Tensor, epsilon=1e-9):
-        # make sure corret data is coming in
-        assert isinstance(activations_at_start, torch.Tensor), f"Expected activations_at_start to be a torch.Tensor, got {type(activations_at_start)}"
-        assert isinstance(actual_module, nn.Module), f"Expected actual_module to be an nn.Module, got {type(actual_module)}"
-        assert isinstance(relevance, torch.Tensor), f"Expected relevance to be a torch.Tensor, got {type(relevance)}"
-        # print(f"activations_at_start shape: {activations_at_start.shape}")
-        activations_at_start.requires_grad_()
-        activations_at_start.retain_grad()
-        # perform a modified forward pass (alpha beta rule applied here apparently)
-        z = epsilon + actual_module.forward(activations_at_start)
-        # divide the outputs by the relevance
-        s = torch.div(relevance, z)
-        # multiply with weights matrix and perform a backwards pass to get the unit relevance
-        torch.multiply(z, s.data).sum().backward(retain_graph=True)
-        # multiple activations with gradients to get the final relevance
-        c = activations_at_start * activations_at_start.grad
-        return c
+    def forward_hook(self, module, input, output):
+        self.executed_layers.append((module.__class__.__name__, module))
+        self.activations_inputs.append(input)
+        self.activation_outputs.append(output)
+    
+    def record_activation(self, name, input, output):
+        self.executed_layers.append(name)
+        self.activations_inputs.append(input)
+        self.activation_outputs.append(output)
+
+    def forward(self, x):
+        self.executed_layers = []
+        self.activations_inputs = []
+        self.activation_outputs = []
+        with track_activations(self):
+            y =  self.model(x)
+        relevance = diff_softmax(y)
+        for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs))):
+            # print(f'Layer {index}: {layer[0]}')
+            # print(relevance.shape, layer[2][0].shape)
+            if relevance.shape != layer[2].shape:
+                    # print(f"mis matching shapes: {relevance.shape} and {layer[2].shape}")
+                    relevance = relevance.view(layer[2].shape)
+                    # print(f"reshaped relevance: {relevance.shape}")
+            if isinstance(layer[0], tuple):
+                # if there is a reshaping operation, we need to reshape the relevance tensor
+                relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
+            else:
+                relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0])
+        return relevance
+
+    def get_layers_and_activation_lists(self):
+        return self.executed_layers, self. activation_inputs, self.activation_outputs

@@ -2,17 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, relevance:torch.Tensor):
-    # print(f"reversing layer of type {type(layer)}")
+def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, relevance:torch.Tensor, layer_type:str=None):
+    print(f"reversing layer of type {layer_type}")
     if isinstance(layer, torch.nn.Linear):
         R = lrp_linear(layer, activations_at_start, relevance)
     elif isinstance(layer, torch.nn.Conv2d):
         R = lrp_conv2d(layer, activations_at_start, relevance)
-    elif isinstance(layer, torch.nn.ReLU):
+    elif isinstance(layer, torch.nn.ReLU) or layer_type == 'ReLU':
         # print('encounterted a ReLu Layer')
         R = relevance * (activations_at_start > 0).float()
-    elif isinstance(layer, torch.nn.LogSoftmax):
-        R = reverse_log_softmax(layer, activations_at_start, relevance)
+    elif isinstance(layer, torch.nn.LogSoftmax) or layer_type == 'LogSoftmax':
+        R = reverse_log_softmax(activations_at_start, relevance)
     else:
         print(f"Layer type {type(layer)} not supported")
     return R
@@ -53,7 +53,7 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     R_new = X * C
     return R_new
 
-def reverse_log_softmax(layer, activation, R):
+def reverse_log_softmax(activation, R):
     """
     Reverse the log_softmax operation.
     Arguments:
