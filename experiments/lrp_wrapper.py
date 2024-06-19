@@ -77,7 +77,7 @@ class WrapperNet(nn.Module):
             y =  self.model(x)
         relevance = diff_softmax(y)
         if target_class != None:
-            relevance = relevance[target_class]
+            relevance = relevance.gather(1, target_class.unsqueeze(1))
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
             if index != 0 and relevance.shape != layer[2].shape:
             # if there is a reshaping/view operation, we need to reshape the relevance tensor
