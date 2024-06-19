@@ -19,6 +19,23 @@ class CosineDistanceLoss(nn.Module):
         loss = cosine_dist.mean()
         return loss
 
+class HybridCosineDistanceCrossEntopyLoss(nn.Module):
+    def __init__(self, _lambda=0.5):
+        super(HybridCosineDistanceCrossEntopyLoss, self).__init__()
+        self._lambda = _lambda
+        self.cosine_loss = CosineDistanceLoss()
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
+
+    def forward(self, explanation_output, explanation_target, classification_output, classification_target):
+        # Compute cosine distance loss
+        cosine_loss = self.cosine_loss(explanation_output, explanation_target)
+        
+        # Compute cross-entropy loss
+        cross_entropy_loss = self.cross_entropy_loss(classification_output, classification_target)
+        
+        # Combine the losses
+        loss = self._lambda * cosine_loss + (1 - self._lambda) * cross_entropy_loss
+        return loss
 # Example usage
 if __name__ == "__main__":
     # Random tensors simulating image batches

@@ -44,9 +44,10 @@ def track_activations(wrapper):
 
 # Wrapper class to track layers and activations
 class WrapperNet(nn.Module):
-    def __init__(self, model):
+    def __init__(self, model:nn.Module, hybrid_loss:bool = False):
         super(WrapperNet, self).__init__()
         self.model = model
+        self.hybrid_loss = hybrid_loss
         self.executed_layers = []
         self.activations_inputs = []
         self.activation_outputs = []
@@ -88,7 +89,10 @@ class WrapperNet(nn.Module):
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
             else:
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
-        return relevance
+        if self.hybrid_loss == True:
+            return diff_softmax(y), relevance
+        else:
+            return relevance
 
     def get_layers_and_activation_lists(self):
         return self.executed_layers, self. activation_inputs, self.activation_outputs
