@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 wandb/
-
+model_files/
 
 # C extensions
 *.so
