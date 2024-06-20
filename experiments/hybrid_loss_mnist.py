@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import argparse
 import wandb
+from PIL import Image
 import io
 # comment out when running locally
 from experiments import WrapperNet
@@ -68,10 +69,9 @@ def plot_heatmap_comparison(model, test_loader, device, attention_function, epoc
     # Save the figure to a BytesIO buffer
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
-    plt.close(fig)  # Close the figure to free up memory
-
-    # Log the image to W&B
-    wandb.log({"Example Image": wandb.Image(buf.getvalue())})
+    buf.seek(0)
+    img = Image.open(buf)
+    wandb.log({"Example Image": wandb.Image(img)})
     # plt.show()
     
 def checkpoint_model(model, output_dir, epoch:int):
@@ -83,7 +83,6 @@ if __name__ == "__main__":
 
     # Adding arguments
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility (default: 0).')
-    parser.add_argument('--max_steps', type=int, default= 25000, help='Maximum number of steps to simulate.')
     parser.add_argument('--batch_size', type=int, default = 64, help='Batch size for training.')
     parser.add_argument('--lr', type=float, default = 1e-4, help='Learning rate for training.')
     parser.add_argument('--output_dir', type=str, default = "experiments/data", help='Directory to save output results.')
@@ -92,13 +91,13 @@ if __name__ == "__main__":
     parser.add_argument('--accuracy_threshold', type=int, default = 50, help='Reward threshold to stop training.')
     parser.add_argument('--_lambda', type=float, default = 0.5, help='balance the loss between cross entropy and cosine distance loss')
     parser.add_argument('--max_epochs', type=int, default = 100, help='Maximum number of epochs to train for.')
-    parser.add_argument('visualize_freq', type=int, default = 5, help='Frequency to visualize the heatmaps')
+    parser.add_argument('--visualize_freq', type=int, default = 5, help='Frequency to visualize the heatmaps')
     parser.add_argument('--tags', nargs='+', default = ["experiment", "mnist_test", "hybrid loss"], help='Tags for wandb runs')
 
     # Parse the arguments
     args = parser.parse_args()
     
-    wandb.init(project="hybrid_loss_mnist", tags=["hybrid_loss", "mnist", "supervised_learning" *args.tags], mode="disabled")
+    wandb.init(project="hybrid_loss_mnist", tags=["hybrid_loss", "mnist", "supervised_learning", *args.tags])
     wandb.config.update(args)
     # define device for GPU compatibility
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -114,15 +113,15 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
     # Initialize the network and optimizer for the underlying network
-
+    # torch.set_random_seed(wandb.config.seed)
     # now wrap the network in the LRP class
     model = WrapperNet(SimpleRNet(), hybrid_loss=True)
-    optimizer= optim.Adam(model.parameters(), lr=1e-4)
+    optimizer= optim.Adam(model.parameters(), lr=1e-3)
 
     # define the loss functions for each
     # lambda parameter weights cross entropy loss with CosineDistance. 
     # The higher the lambda parameter, the more weight is given to the cosine distnace loss
-    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=0.0)
+    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=wandb.config._lambda)
     # Move to device
     model.to(device)
 
@@ -135,8 +134,11 @@ if __name__ == "__main__":
             checkpoint_model(model, wandb.config.output_dir, x)
             print(f'Epoch: {x}')
         test_classification_loss, accuracy = test_model(model, criterion, test_loader, device, apply_threshold)
-        # print(f'Epoch: {x}, Test Classification Loss: {test_classification_loss}, Accuracy: {accuracy}')
+        if accuracy > wandb.config.accuracy_threshold:
+            break
+        print(f'Epoch: {x}, Test Classification Loss: {test_classification_loss}, Accuracy: {accuracy}')
         train_loss = train_model(model, optimizer, criterion, train_loader, device, apply_threshold)
-        # print(f'Epoch: {x}, Training Loss: {train_loss}')
+        print(f'Epoch: {x}, Training Loss: {train_loss}')
     checkpoint_model(model, wandb.config.output_dir, max_epochs)
+    print('completed training.')
     

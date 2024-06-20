@@ -5,8 +5,9 @@ from .lrp_rules import reverse_layer, diff_softmax
 
 
 class ManualCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, hybrid_loss = False):
         super(ManualCNN, self).__init__()
+        self.hybrid_loss = hybrid_loss
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)  # Input: (b, 1, 28, 28)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5) # Input: (b, 10, 24, 24)
         self.fc1 = nn.Linear(20*20*20, 50)            # Input: (b, 8000)
@@ -59,5 +60,8 @@ class ManualCNN(nn.Module):
         R = reverse_layer(relu_0_out, self.conv2, R) # 2
         R = reverse_layer(conv_0_out, self.relu, R) # 1
         R = reverse_layer(x, self.conv1, R) # 0
-        return R
+        if self.hybrid_loss == True:
+            return diff_softmax(output_layer), R
+        else: 
+            return R
         
