@@ -20,11 +20,24 @@ class CosineDistanceLoss(nn.Module):
         return loss
 
 class HybridCosineDistanceCrossEntopyLoss(nn.Module):
-    def __init__(self, _lambda=0.5):
+    def __init__(self, _lambda=0.5, mode=None, max_steps = 100000):
         super(HybridCosineDistanceCrossEntopyLoss, self).__init__()
         self._lambda = _lambda
         self.cosine_loss = CosineDistanceLoss()
         self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.step_counter = 0
+        self.num_steps = max_steps
+        self.mode = mode 
+        if mode != None:
+            print(f"mode specified here as {mode}")
+            if mode == "increasing":
+                self.start_value = _lambda
+                self.end_value = 1
+            elif mode == "decreasing":
+                self.start_value = _lambda
+                self.end_value = 0
+            else:
+                raise ValueError(f"Unsupported _lambda schedule mode specified: {mode}")
 
     def forward(self, explanation_output, explanation_target, classification_output, classification_target):
         # Compute cosine distance loss
@@ -35,7 +48,26 @@ class HybridCosineDistanceCrossEntopyLoss(nn.Module):
         
         # Combine the losses
         loss = self._lambda * cosine_loss + (1 - self._lambda) * cross_entropy_loss
+        self.step()
         return loss
+    
+    def step(self):
+        # Calculate the current value of _lambda based on the progress
+        if self.mode != None:
+            if self.mode == 'decreasing':
+                new_value = self.start_value - (self.start_value - self.end_value) * (self.step_counter / self.num_steps)
+            elif self.mode == 'increasing':
+                new_value = self.start_value + (self.end_value - self.start_value) * (self.step_counter / self.num_steps)
+            else:
+                raise ValueError("Mode should be either 'decreasing' or 'increasing'")
+                
+            # Ensure _lambda stays within the bounds
+            self._lambda = max(0.0, min(new_value, 1.0))
+            
+        # Increment the step count
+        self.step_counter += 1
+        
+        
 # Example usage
 if __name__ == "__main__":
     # Random tensors simulating image batches

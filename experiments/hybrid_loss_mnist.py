@@ -1,6 +1,6 @@
 
 import sys
-sys.path.append('/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP/')
+sys.path.append('/home/charleshiggins/RL-LRP')
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -29,7 +29,7 @@ def train_model(model, optimizer, criterion, train_loader, device, attention_fun
         loss = criterion(output, target_map, output_classification, target)
         loss.backward()
         optimizer.step()
-        wandb.log({"training loss": loss.item()})
+        wandb.log({"training loss": loss.item(), "_lambda": criterion._lambda})
         total_loss += loss.item()
     total_loss /= len(train_loader.dataset)
     return total_loss
@@ -59,11 +59,11 @@ def plot_heatmap_comparison(model, test_loader, device, attention_function, epoc
     output_classification, output = model(data.to(device), target.to(device))
     num = np.random.randint(0, len(target))
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    axes[0].imshow(output[num][0].detach().numpy(), cmap='hot')
+    axes[0].imshow(output[num][0].cpu().detach().numpy(), cmap='hot')
     axes[0].set_title(f'LRP Output after {epoch} iterations')
-    axes[1].imshow(target_map[num][0], cmap='hot')
+    axes[1].imshow(target_map[num][0].cpu(), cmap='hot')
     axes[1].set_title('Target Heatmap (Ground Truth)')
-    axes[2].imshow(data[num][0].detach().numpy(), cmap='gray')
+    axes[2].imshow(data[num][0].cpu().detach().numpy(), cmap='gray')
     axes[2].set_title('Input Image (Original)')
     
     # Save the figure to a BytesIO buffer
@@ -92,6 +92,8 @@ if __name__ == "__main__":
     parser.add_argument('--_lambda', type=float, default = 0.5, help='balance the loss between cross entropy and cosine distance loss')
     parser.add_argument('--max_epochs', type=int, default = 100, help='Maximum number of epochs to train for.')
     parser.add_argument('--visualize_freq', type=int, default = 5, help='Frequency to visualize the heatmaps')
+    parser.add_argument('--loss_mode', type=str, help = "mode for the lambda scheduler to ascend or descend")
+    parser.add_argument('--max_steps', type = int, default = 1000000, help='max number of steps, which also acts as a parameter for loss mode schedule')
     parser.add_argument('--tags', nargs='+', default = ["experiment", "mnist_test", "hybrid loss"], help='Tags for wandb runs')
 
     # Parse the arguments
@@ -116,12 +118,13 @@ if __name__ == "__main__":
     # torch.set_random_seed(wandb.config.seed)
     # now wrap the network in the LRP class
     model = WrapperNet(SimpleRNet(), hybrid_loss=True)
-    optimizer= optim.Adam(model.parameters(), lr=1e-3)
+    optimizer= optim.Adam(model.parameters(), lr=wandb.config.lr)
 
     # define the loss functions for each
     # lambda parameter weights cross entropy loss with CosineDistance. 
     # The higher the lambda parameter, the more weight is given to the cosine distnace loss
-    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=wandb.config._lambda)
+    optim_mode = wandb.config.loss_mode if "loss_mode" in wandb.config.keys() else None
+    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=wandb.config._lambda, mode = optim_mode, max_steps=wandb.config.max_steps)
     # Move to device
     model.to(device)
 
@@ -141,4 +144,4 @@ if __name__ == "__main__":
         print(f'Epoch: {x}, Training Loss: {train_loss}')
     checkpoint_model(model, wandb.config.output_dir, max_epochs)
     print('completed training.')
-    
+    print(f'number of total loss steps: {criterion.step_counter}')
