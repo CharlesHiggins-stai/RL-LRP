@@ -12,6 +12,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import vgg
+import wandb
 
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
@@ -62,6 +63,14 @@ def main():
     global args, best_prec1
     args = parser.parse_args()
 
+    wandb.init(project = "reverse_LRP_mnist",
+    sync_tensorboard=True
+    )
+    wandb.config.update(args)
+    extra_args = {
+        'Experiment Class': 'VGG training run (baseline)'
+    }
+    wandb.config.update(extra_args)
 
     # Check the save_dir exists or not
     if not os.path.exists(args.save_dir):
@@ -201,6 +210,12 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
+            wandb.log({
+                "train/epoch": epoch,
+                "train/loss": loss.avg,
+                'train/accuracy_avg': top1.avg,
+                'train/accuracy_top1': top1.val
+            })
 
 
 def validate(val_loader, model, criterion):
@@ -247,6 +262,12 @@ def validate(val_loader, model, criterion):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       i, len(val_loader), batch_time=batch_time, loss=losses,
                       top1=top1))
+            wandb.log({
+                "test/loss_val": loss.val,
+                'test/accuracy_avg': loss.avg,
+                'test/accuracy_top1': top1.val,
+                'test/accuracy_avg': top1.avg
+            })
 
     print(' * Prec@1 {top1.avg:.3f}'
           .format(top1=top1))
