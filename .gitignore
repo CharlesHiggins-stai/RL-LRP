@@ -5,6 +5,7 @@ __pycache__/
 wandb/
 model_files/
 *.tar 
+baselines/trainVggBaselineForCIFAR10/data/cifar-10-python.tar.gz
 
 # C extensions
 *.so
