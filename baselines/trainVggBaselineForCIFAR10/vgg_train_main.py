@@ -64,8 +64,8 @@ def main():
     args = parser.parse_args()
 
     wandb.init(project = "reverse_LRP_mnist",
-    sync_tensorboard=True
-    )
+        sync_tensorboard=True
+        )
     wandb.config.update(args)
     extra_args = {
         'Experiment Class': 'VGG training run (baseline)'
@@ -212,7 +212,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                       data_time=data_time, loss=losses, top1=top1))
             wandb.log({
                 "train/epoch": epoch,
-                "train/loss": loss.avg,
+                "train/loss": losses.avg,
                 'train/accuracy_avg': top1.avg,
                 'train/accuracy_top1': top1.val
             })
@@ -263,8 +263,7 @@ def validate(val_loader, model, criterion):
                       i, len(val_loader), batch_time=batch_time, loss=losses,
                       top1=top1))
             wandb.log({
-                "test/loss_val": loss.val,
-                'test/accuracy_avg': loss.avg,
+                "test/loss_val": losses.avg,
                 'test/accuracy_top1': top1.val,
                 'test/accuracy_avg': top1.avg
             })
