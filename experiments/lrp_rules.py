@@ -60,6 +60,9 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     S = R / (Z + eps)
     C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
     R_new = X * C
+    R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
+    R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
+    R_new = R_new * (R_sum / (R_new_sum + eps))
     return R_new
 
 def reverse_log_softmax(activation, R):

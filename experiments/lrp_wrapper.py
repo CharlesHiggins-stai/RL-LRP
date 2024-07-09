@@ -98,7 +98,7 @@ class WrapperNet(nn.Module):
         if target_class != None:
             relevance = relevance.gather(1, target_class.unsqueeze(1))
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
-            print('index:', index, '\tlayer:', layer[0])
+            # print('index:', index, '\tlayer:', layer[0])
             if index != 0 and relevance.shape != layer[2].shape:
             # if there is a reshaping/view operation, we need to reshape the relevance tensor
             # in the backwards pass to match the shape of the input tensor
@@ -108,8 +108,8 @@ class WrapperNet(nn.Module):
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
             else:
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
-            print('total relevance: ', relevance.flatten().sum().item())
-            print('relevance mean value:', relevance.flatten().mean().item())
+            # print('total relevance: ', relevance.flatten().sum().item())
+            # print('relevance mean value:', relevance.flatten().mean().item())
         if self.hybrid_loss == True:
             return diff_softmax(y), relevance
         else:
