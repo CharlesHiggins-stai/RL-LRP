@@ -362,8 +362,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True,
-        mode = "disabled"
+        sync_tensorboard=True
         )
     wandb.config.update(args)
     extra_args = {
