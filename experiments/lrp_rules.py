@@ -26,7 +26,7 @@ def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, rele
         
     return R
 
-def lrp_linear(layer, activation, R, eps=1e-6):
+def lrp_linear(layer, activation, R, eps=1e-4):
     """
     LRP for a linear layer.
     Arguments:
@@ -39,7 +39,7 @@ def lrp_linear(layer, activation, R, eps=1e-6):
     W = layer.weight
     # Z = W @ activation.t() + layer.bias[:, None] + eps
     Z = layer.forward(activation)
-    S = R / Z
+    S = R / (Z + eps)
     C = W.t() @ S.t()
     R_new = activation * C.t()
     return R_new
@@ -57,7 +57,7 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     W = layer.weight
     X = activation
     Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) 
-    S = R / (Z + eps)
+    S = torch.divide(R,(Z + eps))
     C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
     R_new = X * C
     R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)

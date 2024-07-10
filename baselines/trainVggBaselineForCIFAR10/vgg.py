@@ -2,7 +2,7 @@
 Modified from https://github.com/pytorch/vision.git
 '''
 import math
-
+import torch
 import torch.nn as nn
 import torch.nn.init as init
 
@@ -38,8 +38,12 @@ class VGG(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
+        if torch.isnan(x).any():
+            print("Some nan's crept into the VGG feature space here")
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
+        if torch.isnan(x).any():
+            print("Some nan's crept into the VGG classifier space here")
         return x
 
 

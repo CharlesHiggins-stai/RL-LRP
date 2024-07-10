@@ -60,6 +60,7 @@ class WrapperNet(nn.Module):
         self.activations_inputs = []
         self.activation_outputs = []
         self.info = []
+        self.handles = []
         ######################################################################## 
         # Register hooks for the layers
         ######################################################################## 
@@ -74,7 +75,7 @@ class WrapperNet(nn.Module):
             and not isinstance(module, WrapperNet) \
             and not len(list(module.children())) > 0 \
                 and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
-                module.register_forward_hook(self.forward_hook)
+                self.handles.append(module.register_forward_hook(self.forward_hook))
     
     def forward_hook(self, module, input, output):
         self.executed_layers.append((module.__class__.__name__, module))
@@ -92,6 +93,7 @@ class WrapperNet(nn.Module):
         self.executed_layers = []
         self.activations_inputs = []
         self.activation_outputs = []
+        self.info = []
         with track_activations(self):
             y =  self.model(x)
         relevance = diff_softmax(y)
@@ -110,10 +112,29 @@ class WrapperNet(nn.Module):
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
             # print('total relevance: ', relevance.flatten().sum().item())
             # print('relevance mean value:', relevance.flatten().mean().item())
+            if torch.isnan(relevance).any():
+                print("Nan found here --- need to work out where this occured")
+                nan_mask = torch.isnan(relevance)
+                relevance = relevance.masked_fill(nan_mask, 0.0)
         if self.hybrid_loss == True:
-            return diff_softmax(y), relevance
+            return torch.nn.functional.log_softmax(y), relevance
         else:
             return relevance
 
     def get_layers_and_activation_lists(self):
         return self.executed_layers, self. activation_inputs, self.activation_outputs
+    
+    def remove_hooks(self):
+        # ensure that we delete hooks after every epoch to avoid unnecessary memory usage
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+        
+    def reapply_hooks(self):
+        # reapply hooks after we have removed them --- make sure we still capture the layers output and activations
+        for name, module in self.model.named_modules():
+            if not isinstance(module, nn.Sequential) \
+            and not isinstance(module, WrapperNet) \
+            and not len(list(module.children())) > 0 \
+                and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
+                self.handles.append(module.register_forward_hook(self.forward_hook))

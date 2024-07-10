@@ -14,7 +14,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import baselines.trainVggBaselineForCIFAR10.vgg as vgg
 import wandb
-from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch 
+from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, log_memory_usage, free_memory
 from experiments import HybridCosineDistanceCrossEntopyLoss, WrapperNet
 
 model_names = sorted(name for name in vgg.__dict__
@@ -113,7 +113,9 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
+    losses_total = AverageMeter()
+    losses_cosine = AverageMeter()
+    losses_cross_entropy = AverageMeter()
     top1 = AverageMeter()
 
     # switch to train mode
@@ -133,20 +135,26 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
 
         # compute output
         output, heatmaps = learner_model(input)
-        _, target_maps = teacher_model(input)
-        target_maps = filter_top_percent_pixels_over_channels(target_maps, args.top_percent)
-        loss = criterion(heatmaps, target_maps, output, target)
+        with torch.no_grad():
+            _, target_maps = teacher_model(input)
+        target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), args.top_percent)
+        loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
         optimizer.step()
 
         output = output.float()
         loss = loss.float()
+        cosine_loss = cosine_loss.float()
+        cross_entropy_loss = cross_entropy_loss.float()
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.item(), input.size(0))
+        losses_total.update(loss.item(), input.size(0))
+        losses_cosine.update(cosine_loss.item(), input.size(0))
+        losses_cross_entropy.update(cross_entropy_loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
 
         # measure elapsed time
@@ -158,23 +166,40 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Cosine Loss {cosine_loss.val:.4f} ({cosine_loss.avg:.4f})\t'
+                  'Cross Entropy Loss {cross_entropy_loss.val:.4f} ({cross_entropy_loss.avg:.4f})\t'
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
-                      data_time=data_time, loss=losses, top1=top1))
+                      data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1
+                      ))
             wandb.log({
                 "train/epoch": epoch,
-                "train/loss": losses.avg,
+                "train/loss": losses_total.avg,
+                'train/loss_cosine': losses_cosine.avg,
+                'train/loss_cross_entropy': losses_cross_entropy.avg,
                 'train/accuracy_avg': top1.avg,
                 'train/accuracy_top1': top1.val
             })
-
+    # ensure that we're clearning unnecessary hooks (memory leak somewhere)
+    # and reapplying the hooks for the next iteration
+    learner_model.remove_hooks()
+    teacher_model.remove_hooks()
+    learner_model.reapply_hooks()
+    teacher_model.reapply_hooks()
+    # clean up memory
+    log_memory_usage(wandb_log=False)
+    free_memory()
+    del batch_time, data_time, losses_total, losses_cosine, losses_cross_entropy, top1
+    del output, heatmaps, target_maps, loss, cosine_loss, cross_entropy_loss, prec1
 
 def validate(val_loader, learner_model, teacher_model, criterion):
     """
     Run evaluation
     """
     batch_time = AverageMeter()
-    losses = AverageMeter()
+    losses_total = AverageMeter()
+    losses_cosine = AverageMeter()
+    losses_cross_entropy = AverageMeter()
     top1 = AverageMeter()
 
     # switch to evaluate mode
@@ -193,15 +218,19 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         with torch.no_grad():
             output, heatmaps = learner_model(input)
             _, target_maps = teacher_model(input)
-            target_maps =  filter_top_percent_pixels_over_channels(target_maps, args.top_percent)
-            loss = criterion(heatmaps, target_maps, output, target)
+            target_maps =  filter_top_percent_pixels_over_channels(target_maps.detach(), args.top_percent)
+            loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
         output = output.float()
         loss = loss.float()
+        cosine_loss = cosine_loss.float()
+        cross_entropy_loss = cross_entropy_loss.float()
 
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.item(), input.size(0))
+        losses_total.update(loss.item(), input.size(0))
+        losses_cosine.update(cosine_loss.item(), input.size(0))
+        losses_cross_entropy.update(cross_entropy_loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
 
         # measure elapsed time
@@ -212,11 +241,16 @@ def validate(val_loader, learner_model, teacher_model, criterion):
             print('Test: [{0}/{1}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Cosine Loss {cosine_loss.val:.4f} ({cosine_loss.avg:.4f})\t'
+                  'Cross Entropy Loss {cross_entropy_loss.val:.4f} ({cross_entropy_loss.avg:.4f})\t'
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-                      i, len(val_loader), batch_time=batch_time, loss=losses,
+                      i, len(val_loader), batch_time=batch_time, loss=losses_total, 
+                      cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy,
                       top1=top1))
             wandb.log({
-                "test/loss_val": losses.avg,
+                "test/loss_val": losses_total.avg,
+                'test/loss_cosine': losses_cosine.avg,
+                'test/loss_cross_entropy': losses_cross_entropy.avg,
                 'test/accuracy_top1': top1.val,
                 'test/accuracy_avg': top1.avg
             })
@@ -285,7 +319,7 @@ def get_teacher_model(teacher_checkpoint_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-    parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg19',
+    parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg11',
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
@@ -297,7 +331,7 @@ if __name__ == '__main__':
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('-b', '--batch-size', default=128, type=int,
                         metavar='N', help='mini-batch size (default: 128)')
-    parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
+    parser.add_argument('--lr', '--learning-rate', default=1e-2, type=float,
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
@@ -319,7 +353,7 @@ if __name__ == '__main__':
                         help='Top x percent of pixels to retain')
     parser.add_argument('--save-dir', dest='save_dir',
                         help='The directory used to save the trained models',
-                        default='save_temp', type=str)
+                        default='data/save_vgg11', type=str)
     parser.add_argument('--_lambda', type=float, default=0.1, help='balance the loss between cross entropy and cosine distance loss')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")

@@ -35,7 +35,11 @@ class HybridCosineDistanceCrossEntopyLoss(nn.Module):
         
         # Combine the losses
         loss = self._lambda * cosine_loss + (1 - self._lambda) * cross_entropy_loss
-        return loss
+        if torch.isnan(loss).any() or torch.isinf(loss).any():            
+            print(f"cosine_loss: {cosine_loss.item()}, cross_entropy_loss: {cross_entropy_loss.item()}")
+            print("returning 0 loss due to nan or inf")
+            return torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
+        return loss, cosine_loss, cross_entropy_loss
 # Example usage
 if __name__ == "__main__":
     # Random tensors simulating image batches
