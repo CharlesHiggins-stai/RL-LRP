@@ -2,7 +2,7 @@
 
 for model in vgg11;
     do
-    for it in $(seq 1 5);
+    for it in 0 1 2 3 4 5;
         do
         for lmda in 0.5 0.1 0.01 0.001 0.0001;
             do

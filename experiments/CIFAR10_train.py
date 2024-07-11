@@ -67,7 +67,7 @@ def main(args):
     cudnn.benchmark = True
 
     # define loss function (criterion) and pptimizer
-    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=args._lambda)
+    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=args._lambda, mode="ascending", step_size=1e-5, max_lambda=0.5, min_lambda=1e-4)
     if args.cpu:
         criterion = criterion.cpu()
     else:
@@ -145,6 +145,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
         loss.backward()
         torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
         optimizer.step()
+        update_hybrid_loss(criterion)
 
         output = output.float()
         loss = loss.float()
@@ -168,9 +169,10 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                   'Cosine Loss {cosine_loss.val:.4f} ({cosine_loss.avg:.4f})\t'
                   'Cross Entropy Loss {cross_entropy_loss.val:.4f} ({cross_entropy_loss.avg:.4f})\t'
+                  'loss_lambda {loss_lambda:.4f}\t'
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
-                      data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1
+                      data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
                       ))
             wandb.log({
                 "train/epoch": epoch,
@@ -178,7 +180,8 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                 'train/loss_cosine': losses_cosine.avg,
                 'train/loss_cross_entropy': losses_cross_entropy.avg,
                 'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val
+                'train/accuracy_top1': top1.val,
+                'train/loss_lambda': criterion._lambda
             })
     # ensure that we're clearning unnecessary hooks (memory leak somewhere)
     # and reapplying the hooks for the next iteration
@@ -291,6 +294,9 @@ def adjust_learning_rate(optimizer, epoch):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+def update_hybrid_loss(criterion):
+    if criterion.mode != None:
+        criterion.step_lambda()
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -355,6 +361,10 @@ if __name__ == '__main__':
                         help='The directory used to save the trained models',
                         default='data/save_vgg11', type=str)
     parser.add_argument('--_lambda', type=float, default=0.1, help='balance the loss between cross entropy and cosine distance loss')
+    parser.add_argument('--mode', type=str, default='ascending', help='mode for stepping lambda')
+    parser.add_argument('--step_size', type=float, default=1e-5, help='step size for lambda')
+    parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
+    parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     
@@ -362,7 +372,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True
+        sync_tensorboard=True,
+        mode='disabled'
         )
     wandb.config.update(args)
     extra_args = {
