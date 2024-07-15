@@ -22,21 +22,31 @@ model_names = sorted(name for name in vgg.__dict__
                      and name.startswith("vgg")
                      and callable(vgg.__dict__[name]))
 
+global args, best_prec1
 
 
-
-def main(args):
+def main():
+    wandb.init(project = "reverse_LRP_mnist",
+        sync_tensorboard=True
+        )
+    extra_args = {
+        'Experiment Class': 'VGG11 Hybrid Loss'
+    }   
+    wandb.config.update(extra_args) 
+    # cheap and lazy workaround to update the config for sweeps
+    update_config_for_sweeps()
+    print(wandb.config)
     # set best precision to 0
     best_prec1 = 0
     # make sure we have a save dir
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
+    if not os.path.exists(wandb.config.save_dir):
+        os.makedirs(wandb.config.save_dir)
     # load the teacher model
-    teacher_model = WrapperNet(get_teacher_model(args.teacher_checkpoint_path), hybrid_loss=True)
-    learner_model = vgg.__dict__[args.arch]()
+    teacher_model = WrapperNet(get_teacher_model(wandb.config.teacher_checkpoint_path), hybrid_loss=True)
+    learner_model = vgg.__dict__[wandb.config.arch]()
     learner_model.features = torch.nn.DataParallel(learner_model.features)
     learner_model = WrapperNet(learner_model, hybrid_loss=True)
-    if args.cpu:
+    if wandb.config.cpu:
         learner_model.cpu()
         teacher_model.cpu
     else:
@@ -53,41 +63,41 @@ def main(args):
             transforms.ToTensor(),
             normalize,
         ]), download=True),
-        batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True)
+        batch_size=wandb.config.batch_size, shuffle=True,
+        num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True)
+        batch_size=wandb.config.batch_size, shuffle=False,
+        num_workers=wandb.config.workers, pin_memory=True)
 
     cudnn.benchmark = True
 
     # define loss function (criterion) and pptimizer
-    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=args._lambda, mode="ascending", step_size=1e-5, max_lambda=0.5, min_lambda=1e-4)
-    if args.cpu:
+    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=wandb.config._lambda, mode=wandb.config.mode, step_size=wandb.config.step_size, max_lambda=wandb.config.max_lambda, min_lambda=wandb.config.min_lambda)
+    if wandb.config.cpu:
         criterion = criterion.cpu()
     else:
         criterion = criterion.cuda()
         
-    if args.half:
+    if wandb.config.half:
         teacher_model.half()
         learner_model.half()
         criterion.half()
 
-    optimizer = torch.optim.SGD(learner_model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    optimizer = torch.optim.SGD(learner_model.parameters(), wandb.config.lr,
+                                momentum=wandb.config.momentum,
+                                weight_decay=wandb.config.weight_decay)
 
 
-    if args.evaluate:
+    if wandb.config.evaluate:
             validate(val_loader, learner_model, teacher_model, criterion)
             return
 
-    for epoch in range(args.start_epoch, args.epochs):
+    for epoch in range(wandb.config.start_epoch, wandb.config.epochs):
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
@@ -99,11 +109,20 @@ def main(args):
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
-        save_checkpoint({
+        date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
+        # save_checkpoint({
+        #     'epoch': epoch + 1,
+        #     'state_dict': learner_model.state_dict(),
+        #     'best_prec1': best_prec1,
+        # }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
+    wandb.finish()
+    # moved to save models only after the training run is done
+    date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
+    save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch)))
+    }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
 
 def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
     """
@@ -127,17 +146,17 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if args.cpu == False:
+        if wandb.config.cpu == False:
             input = input.cuda()
             target = target.cuda()
-        if args.half:
+        if wandb.config.half:
             input = input.half()
 
         # compute output
         output, heatmaps = learner_model(input)
         with torch.no_grad():
             _, target_maps = teacher_model(input)
-        target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), args.top_percent)
+        target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
         # compute gradient and do SGD step
@@ -162,7 +181,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i % args.print_freq == 0:
+        if i % wandb.config.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -210,18 +229,18 @@ def validate(val_loader, learner_model, teacher_model, criterion):
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        if args.cpu == False:
+        if wandb.config.cpu == False:
             input = input.cuda()
             target = target.cuda()
 
-        if args.half:
+        if wandb.config.half:
             input = input.half()
 
         # compute output
         with torch.no_grad():
             output, heatmaps = learner_model(input)
             _, target_maps = teacher_model(input)
-            target_maps =  filter_top_percent_pixels_over_channels(target_maps.detach(), args.top_percent)
+            target_maps =  filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
             loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
         output = output.float()
@@ -240,7 +259,7 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i % args.print_freq == 0:
+        if i % wandb.config.print_freq == 0:
             print('Test: [{0}/{1}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -267,7 +286,9 @@ def validate(val_loader, learner_model, teacher_model, criterion):
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     """
     Save the training model
+    --- overwrite any data which is present already. 
     """
+    
     torch.save(state, filename)
 
 class AverageMeter(object):
@@ -290,7 +311,7 @@ class AverageMeter(object):
 
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 2 every 30 epochs"""
-    lr = args.lr * (0.5 ** (epoch // 30))
+    lr = wandb.config.lr * (0.5 ** (epoch // 30))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
@@ -313,8 +334,6 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
-
-
 def get_teacher_model(teacher_checkpoint_path):
     checkpoint = torch.load(teacher_checkpoint_path)
     # assume teacher model is vgg11 for now
@@ -323,19 +342,45 @@ def get_teacher_model(teacher_checkpoint_path):
     teacher.load_state_dict(checkpoint['new_state_dict'])
     return teacher
 
+def update_config_for_sweeps():
+    default_args = {
+        'arch': 'vgg11',
+        'workers': 2,
+        'epochs': 300,
+        'start_epoch': 0,
+        'momentum': 0.9,
+        'weight_decay': 5e-4,
+        'print_freq': 20,
+        'resume': '',
+        'evaluate': False,
+        'pretrained': False,
+        'half': False,
+        'cpu': False,
+        'top_percent': 0.75,
+        'save_dir': 'data/save_vgg11',
+        'max_lambda': 0.5,
+        'min_lambda': 0.0,
+        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
+    }   
+    for key, value in default_args.items():
+        if key not in wandb.config:
+            wandb.config.update({key: value})
+            print('updated wandb config to include key: ', key, ' with value: ', value)
+    return 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
     parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg11',
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=300, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('-b', '--batch-size', default=128, type=int,
+    parser.add_argument('-b', '--batch-size', default=64, type=int,
                         metavar='N', help='mini-batch size (default: 128)')
     parser.add_argument('--lr', '--learning-rate', default=1e-2, type=float,
                         metavar='LR', help='initial learning rate')
@@ -361,24 +406,18 @@ if __name__ == '__main__':
                         help='The directory used to save the trained models',
                         default='data/save_vgg11', type=str)
     parser.add_argument('--_lambda', type=float, default=0.1, help='balance the loss between cross entropy and cosine distance loss')
-    parser.add_argument('--mode', type=str, default='ascending', help='mode for stepping lambda')
+    parser.add_argument('--mode', type=str, default=None, help='mode for stepping lambda')
     parser.add_argument('--step_size', type=float, default=1e-5, help='step size for lambda')
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     
-    global args, best_prec1
     args = parser.parse_args()
-    
+    # enter the main loop]
+     
     wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True,
-        mode='disabled'
+        sync_tensorboard=True
         )
     wandb.config.update(args)
-    extra_args = {
-        'Experiment Class': 'VGG11 Hybrid Loss'
-    }
-    wandb.config.update(extra_args)
-    # enter the main loop
-    main(args)
+    main()
