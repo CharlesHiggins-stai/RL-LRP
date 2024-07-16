@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/tromero_client/RL-LRP')
+sys.path.append('/home/charleshiggins/RL-LRP')
 import argparse
 import os
 import shutil
@@ -57,7 +57,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -67,7 +67,7 @@ def main():
         num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -360,7 +360,7 @@ def update_config_for_sweeps():
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
+        'teacher_checkpoint_path': '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
     }   
     for key, value in default_args.items():
         if key not in wandb.config:
@@ -411,7 +411,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
-                        default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+                        default="/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     
     args = parser.parse_args()
     # enter the main loop]
