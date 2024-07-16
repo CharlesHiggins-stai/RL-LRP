@@ -20,11 +20,16 @@ class CosineDistanceLoss(nn.Module):
         return loss
 
 class HybridCosineDistanceCrossEntopyLoss(nn.Module):
-    def __init__(self, _lambda=0.5):
+    def __init__(self, _lambda=0.5, mode = None, step_size = 1e-5, max_lambda = 0.5, min_lambda = 0.0):
         super(HybridCosineDistanceCrossEntopyLoss, self).__init__()
         self._lambda = _lambda
         self.cosine_loss = CosineDistanceLoss()
         self.cross_entropy_loss = nn.CrossEntropyLoss()
+        # Extra params for dynamic updating of _lambda
+        self.mode = mode
+        self.step_size = step_size
+        self.max_lambda = max_lambda
+        self.min_lambda = min_lambda
 
     def forward(self, explanation_output, explanation_target, classification_output, classification_target):
         # Compute cosine distance loss
@@ -35,7 +40,21 @@ class HybridCosineDistanceCrossEntopyLoss(nn.Module):
         
         # Combine the losses
         loss = self._lambda * cosine_loss + (1 - self._lambda) * cross_entropy_loss
-        return loss
+        if torch.isnan(loss).any() or torch.isinf(loss).any():            
+            print(f"cosine_loss: {cosine_loss.item()}, cross_entropy_loss: {cross_entropy_loss.item()}")
+            print("returning 0 loss due to nan or inf")
+            return torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
+        return loss, cosine_loss, cross_entropy_loss
+    
+    def step_lambda(self):
+        assert self.mode != None, "Cosine loss step mode not set"
+        if self.mode == "ascending":
+            self._lambda = min(self.max_lambda, self._lambda + self.step_size)
+        elif self.mode == "descending":
+            self._lambda = max(self.min_lambda, self._lambda - self.step_size)
+        else:
+            raise ValueError("Invalid step mode for cosine loss stepping")
+    
 # Example usage
 if __name__ == "__main__":
     # Random tensors simulating image batches

@@ -12,6 +12,7 @@ def track_activations(wrapper):
     original_relu = F.relu
     original_max_pool2d = F.max_pool2d
     original_log_softmax = F.log_softmax
+    original_adaptive_avg_pool2d = F.adaptive_avg_pool2d
     
     def wrapped_relu(input, *args, **kwargs):
         output = original_relu(input, *args, **kwargs)
@@ -21,6 +22,11 @@ def track_activations(wrapper):
     def wrapped_max_pool2d(input, stride, *args, **kwargs):
         output, indices = original_max_pool2d(input, stride, return_indices=True)
         wrapper.record_activation('MaxPool2d', input, output, extra={"indices": indices, "stride": stride})
+        return output
+
+    def wrapped_adaptive_avg_pool2d(input, output_size, *args, **kwargs):
+        output = original_adaptive_avg_pool2d(input, output_size)
+        wrapper.record_activation('AdaptiveAvgPool2d', input, output)
         return output
     
     def wrapped_log_softmax(input, *args, **kwargs):
@@ -33,6 +39,7 @@ def track_activations(wrapper):
     F.relu = wrapped_relu
     F.max_pool2d = wrapped_max_pool2d
     F.log_softmax = wrapped_log_softmax
+    F.adaptive_avg_pool2d = wrapped_adaptive_avg_pool2d
     
     try:
         yield
@@ -40,6 +47,7 @@ def track_activations(wrapper):
         F.relu = original_relu
         F.max_pool2d = original_max_pool2d
         F.log_softmax = original_log_softmax
+        F.adaptive_avg_pool2d = original_adaptive_avg_pool2d
 
 
 # Wrapper class to track layers and activations
@@ -52,11 +60,22 @@ class WrapperNet(nn.Module):
         self.activations_inputs = []
         self.activation_outputs = []
         self.info = []
-        
+        self.handles = []
+        ######################################################################## 
         # Register hooks for the layers
+        ######################################################################## 
+        # need to add in a bit of logic to ensure layers aren't double counted
+        # under the hood, some layers use functions which have been
+        # overridden with the context manager. 
+        # We discard these layers, and instead use the context manager for these
+        # and instead we simply record all other layers
+        ######################################################################## 
         for name, module in self.model.named_modules():
-            if not isinstance(module, nn.Sequential) and not isinstance(module, WrapperNet) and not len(list(module.children())) > 0:
-                module.register_forward_hook(self.forward_hook)
+            if not isinstance(module, nn.Sequential) \
+            and not isinstance(module, WrapperNet) \
+            and not len(list(module.children())) > 0 \
+                and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
+                self.handles.append(module.register_forward_hook(self.forward_hook))
     
     def forward_hook(self, module, input, output):
         self.executed_layers.append((module.__class__.__name__, module))
@@ -74,12 +93,14 @@ class WrapperNet(nn.Module):
         self.executed_layers = []
         self.activations_inputs = []
         self.activation_outputs = []
+        self.info = []
         with track_activations(self):
             y =  self.model(x)
         relevance = diff_softmax(y)
         if target_class != None:
             relevance = relevance.gather(1, target_class.unsqueeze(1))
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
+            # print('index:', index, '\tlayer:', layer[0])
             if index != 0 and relevance.shape != layer[2].shape:
             # if there is a reshaping/view operation, we need to reshape the relevance tensor
             # in the backwards pass to match the shape of the input tensor
@@ -89,10 +110,31 @@ class WrapperNet(nn.Module):
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
             else:
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
+            # print('total relevance: ', relevance.flatten().sum().item())
+            # print('relevance mean value:', relevance.flatten().mean().item())
+            if torch.isnan(relevance).any():
+                print("Nan found here --- need to work out where this occured")
+                nan_mask = torch.isnan(relevance)
+                relevance = relevance.masked_fill(nan_mask, 0.0)
         if self.hybrid_loss == True:
-            return diff_softmax(y), relevance
+            return torch.nn.functional.log_softmax(y), relevance
         else:
             return relevance
 
     def get_layers_and_activation_lists(self):
         return self.executed_layers, self. activation_inputs, self.activation_outputs
+    
+    def remove_hooks(self):
+        # ensure that we delete hooks after every epoch to avoid unnecessary memory usage
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+        
+    def reapply_hooks(self):
+        # reapply hooks after we have removed them --- make sure we still capture the layers output and activations
+        for name, module in self.model.named_modules():
+            if not isinstance(module, nn.Sequential) \
+            and not isinstance(module, WrapperNet) \
+            and not len(list(module.children())) > 0 \
+                and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
+                self.handles.append(module.register_forward_hook(self.forward_hook))

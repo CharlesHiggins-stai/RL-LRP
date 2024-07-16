@@ -15,11 +15,18 @@ def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, rele
         R = reverse_log_softmax(activations_at_start, relevance)
     elif isinstance(layer, torch.nn.MaxPool2d) or layer_type == 'MaxPool2d':
         R = reverse_max_pool2d(relevance, extra["indices"], activations_at_start, extra["stride"])
+    elif isinstance(layer, torch.nn.Dropout or layer_type == 'Dropout'):
+        # don't bother reversing --- assume that dropout has no effect...
+        # cannot perform gradient op, and 
+        R = relevance
+    elif isinstance(layer, torch.nn.AdaptiveAvgPool2d) or layer_type == 'AdaptiveAvgPool2d':
+        R = reverse_adaptive_avg_pool2d(relevance, activations_at_start)
     else:
-        print(f"Layer type {type(layer)} not supported")
+        raise ValueError(f"Layer type {type(layer)} not supported")
+        
     return R
 
-def lrp_linear(layer, activation, R, eps=1e-6):
+def lrp_linear(layer, activation, R, eps=1e-4):
     """
     LRP for a linear layer.
     Arguments:
@@ -32,7 +39,7 @@ def lrp_linear(layer, activation, R, eps=1e-6):
     W = layer.weight
     # Z = W @ activation.t() + layer.bias[:, None] + eps
     Z = layer.forward(activation)
-    S = R / Z
+    S = R / (Z + eps)
     C = W.t() @ S.t()
     R_new = activation * C.t()
     return R_new
@@ -49,10 +56,13 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     """
     W = layer.weight
     X = activation
-    Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) + eps
-    S = R / Z
+    Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) 
+    S = torch.divide(R,(Z + eps))
     C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
     R_new = X * C
+    R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
+    R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
+    R_new = R_new * (R_sum / (R_new_sum + eps))
     return R_new
 
 def reverse_log_softmax(activation, R):
@@ -108,3 +118,25 @@ def reverse_max_pool2d(relevance, indices, input_shape, kernel_size, stride=None
     reversed_input = F.max_unpool2d(relevance, indices, kernel_size=kernel_size, stride=stride, padding=padding, output_size=output_size)
     
     return reversed_input
+
+def reverse_adaptive_avg_pool2d(relevance, input_activation, eta = 1e-9):
+    """
+    Make sure to use a differentiable interpolation method if gradients need to pass through this function.
+    """
+    output_shape = relevance.shape
+    # Calculate stride and kernel size
+    stride_height = input_activation.shape[2] // output_shape[2]
+    stride_width = input_activation.shape[3] // output_shape[3]
+    kernel_height = input_activation.shape[2] - (output_shape[2] - 1) * stride_height
+    kernel_width = input_activation.shape[3] - (output_shape[3] - 1) * stride_width
+    
+    # Differentiable interpolation
+    upsampled_relevance = F.interpolate(relevance, size=(input_activation.shape[2], input_activation.shape[3]), mode='bilinear', align_corners=True)
+
+    # Continue with padding and average pooling
+    input_activation_padded = F.pad(input_activation, (0, kernel_width - 1, 0, kernel_height - 1))
+    Z = F.avg_pool2d(input_activation_padded, kernel_size=(kernel_height, kernel_width), stride=(stride_height, stride_width))
+    Z_upsampled = F.interpolate(Z, size=(input_activation.shape[2], input_activation.shape[3]), mode='bilinear', align_corners=True)
+    
+    return upsampled_relevance * (input_activation / (Z_upsampled + eta))
+
