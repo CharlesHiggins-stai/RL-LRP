@@ -176,6 +176,12 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
         losses_cosine.update(cosine_loss.item(), input.size(0))
         losses_cross_entropy.update(cross_entropy_loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
+        
+        # remove and reapply hooks to avoid memory leaks. 
+        learner_model.remove_hooks()
+        teacher_model.remove_hooks()
+        learner_model.reapply_hooks()
+        teacher_model.reapply_hooks()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -202,12 +208,6 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                 'train/accuracy_top1': top1.val,
                 'train/loss_lambda': criterion._lambda
             })
-    # ensure that we're clearning unnecessary hooks (memory leak somewhere)
-    # and reapplying the hooks for the next iteration
-    learner_model.remove_hooks()
-    teacher_model.remove_hooks()
-    learner_model.reapply_hooks()
-    teacher_model.reapply_hooks()
     # clean up memory
     log_memory_usage(wandb_log=False)
     free_memory()
@@ -254,6 +254,12 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         losses_cosine.update(cosine_loss.item(), input.size(0))
         losses_cross_entropy.update(cross_entropy_loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
+        
+        # clear hooks for clean memory management
+        learner_model.remove_hooks()
+        teacher_model.remove_hooks()
+        learner_model.reapply_hooks()
+        teacher_model.reapply_hooks()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -380,7 +386,7 @@ if __name__ == '__main__':
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('-b', '--batch-size', default=64, type=int,
+    parser.add_argument('-b', '--batch-size', default=128, type=int,
                         metavar='N', help='mini-batch size (default: 128)')
     parser.add_argument('--lr', '--learning-rate', default=1e-2, type=float,
                         metavar='LR', help='initial learning rate')
