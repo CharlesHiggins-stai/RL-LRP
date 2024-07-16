@@ -275,13 +275,13 @@ def validate(val_loader, learner_model, teacher_model, criterion):
                       i, len(val_loader), batch_time=batch_time, loss=losses_total, 
                       cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy,
                       top1=top1))
-            wandb.log({
-                "test/loss_val": losses_total.avg,
-                'test/loss_cosine': losses_cosine.avg,
-                'test/loss_cross_entropy': losses_cross_entropy.avg,
-                'test/accuracy_top1': top1.val,
-                'test/accuracy_avg': top1.avg
-            })
+    wandb.log({
+        "test/loss_val": losses_total.avg,
+        'test/loss_cosine': losses_cosine.avg,
+        'test/loss_cross_entropy': losses_cross_entropy.avg,
+        'test/accuracy_top1': top1.val,
+        'test/accuracy_avg': top1.avg
+    })
 
     print(' * Prec@1 {top1.avg:.3f}'
           .format(top1=top1))
