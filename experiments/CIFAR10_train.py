@@ -104,11 +104,14 @@ def main():
         train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, learner_model, teacher_model, criterion)
+        prec1 = validate(val_loader, learner_model, teacher_model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
+        wandb.log({
+            'test/best_prec1': best_prec1
+        })
         date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
         # save_checkpoint({
         #     'epoch': epoch + 1,
@@ -199,22 +202,22 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
                       ))
-            wandb.log({
-                "train/epoch": epoch,
-                "train/loss": losses_total.avg,
-                'train/loss_cosine': losses_cosine.avg,
-                'train/loss_cross_entropy': losses_cross_entropy.avg,
-                'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val,
-                'train/loss_lambda': criterion._lambda
-            })
+    wandb.log({
+        "train/epoch": epoch,
+        "train/loss": losses_total.avg,
+        'train/loss_cosine': losses_cosine.avg,
+        'train/loss_cross_entropy': losses_cross_entropy.avg,
+        'train/accuracy_avg': top1.avg,
+        'train/accuracy_top1': top1.val,
+        'train/loss_lambda': criterion._lambda
+    })
     # clean up memory
     log_memory_usage(wandb_log=False)
     free_memory()
     del batch_time, data_time, losses_total, losses_cosine, losses_cross_entropy, top1
     del output, heatmaps, target_maps, loss, cosine_loss, cross_entropy_loss, prec1
 
-def validate(val_loader, learner_model, teacher_model, criterion):
+def validate(val_loader, learner_model, teacher_model, criterion, epoch):
     """
     Run evaluation
     """
@@ -280,7 +283,8 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         'test/loss_cosine': losses_cosine.avg,
         'test/loss_cross_entropy': losses_cross_entropy.avg,
         'test/accuracy_top1': top1.val,
-        'test/accuracy_avg': top1.avg
+        'test/accuracy_avg': top1.avg, 
+        'test/epoch': epoch
     })
 
     print(' * Prec@1 {top1.avg:.3f}'
@@ -351,7 +355,7 @@ def get_teacher_model(teacher_checkpoint_path):
 def update_config_for_sweeps():
     default_args = {
         'arch': 'vgg11',
-        'workers': 2,
+        'workers': 4,
         'epochs': 300,
         'start_epoch': 0,
         'momentum': 0.9,
