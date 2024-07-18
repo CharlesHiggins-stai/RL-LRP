@@ -26,7 +26,7 @@ def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, rele
         
     return R
 
-def lrp_linear(layer, activation, R, eps=1e-4):
+def lrp_linear(layer, activation, R, eps=1e-6):
     """
     LRP for a linear layer.
     Arguments:
@@ -66,7 +66,7 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     return R_new
 
 def reverse_log_softmax(activation, R):
-    """
+    """ 
     Reverse the log_softmax operation.
     Arguments:
         layer: the log_softmax layer (nn.LogSoftmax)
@@ -80,7 +80,7 @@ def reverse_log_softmax(activation, R):
     probs_sum = probs.sum(dim=1, keepdim=True)
     return R * probs / probs_sum
 
-def diff_softmax(input, temperature=1.0):
+def diff_softmax(input, temperature=1):
     """
     A function to generate a differential alternative to the softmax function for the arg-max operation
     It's a smooth function, which essentially focuses on the lagest value (i.e. the output of the softmax function)
