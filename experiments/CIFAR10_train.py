@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/charleshiggins/RL-LRP')
+sys.path.append('/home/tromero_client/RL-LRP')
 import argparse
 import os
 import shutil
@@ -57,7 +57,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -67,7 +67,7 @@ def main():
         num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -104,11 +104,14 @@ def main():
         train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, learner_model, teacher_model, criterion)
+        prec1 = validate(val_loader, learner_model, teacher_model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
+        wandb.log({
+            'test/best_prec1': best_prec1
+        })
         date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
         # save_checkpoint({
         #     'epoch': epoch + 1,
@@ -199,22 +202,22 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
                       ))
-            wandb.log({
-                "train/epoch": epoch,
-                "train/loss": losses_total.avg,
-                'train/loss_cosine': losses_cosine.avg,
-                'train/loss_cross_entropy': losses_cross_entropy.avg,
-                'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val,
-                'train/loss_lambda': criterion._lambda
-            })
+    wandb.log({
+        "train/epoch": epoch,
+        "train/loss": losses_total.avg,
+        'train/loss_cosine': losses_cosine.avg,
+        'train/loss_cross_entropy': losses_cross_entropy.avg,
+        'train/accuracy_avg': top1.avg,
+        'train/accuracy_top1': top1.val,
+        'train/loss_lambda': criterion._lambda
+    })
     # clean up memory
     log_memory_usage(wandb_log=False)
     free_memory()
     del batch_time, data_time, losses_total, losses_cosine, losses_cross_entropy, top1
     del output, heatmaps, target_maps, loss, cosine_loss, cross_entropy_loss, prec1
 
-def validate(val_loader, learner_model, teacher_model, criterion):
+def validate(val_loader, learner_model, teacher_model, criterion, epoch):
     """
     Run evaluation
     """
@@ -280,7 +283,8 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         'test/loss_cosine': losses_cosine.avg,
         'test/loss_cross_entropy': losses_cross_entropy.avg,
         'test/accuracy_top1': top1.val,
-        'test/accuracy_avg': top1.avg
+        'test/accuracy_avg': top1.avg, 
+        'test/epoch': epoch
     })
 
     print(' * Prec@1 {top1.avg:.3f}'
@@ -351,7 +355,7 @@ def get_teacher_model(teacher_checkpoint_path):
 def update_config_for_sweeps():
     default_args = {
         'arch': 'vgg11',
-        'workers': 2,
+        'workers': 4,
         'epochs': 300,
         'start_epoch': 0,
         'momentum': 0.9,
@@ -366,7 +370,7 @@ def update_config_for_sweeps():
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
+        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
     }   
     for key, value in default_args.items():
         if key not in wandb.config:
@@ -417,7 +421,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
-                        default="/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+                        default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     
     args = parser.parse_args()
     # enter the main loop]

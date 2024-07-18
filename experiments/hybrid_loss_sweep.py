@@ -7,7 +7,7 @@ if __name__ == '__main__':
     hyperparam_dict = {
         "method": "bayes",
         "name": "hybrid_loss_sweep",
-        "metric": {"goal": "maximize", "name": "test/accuracy_top1"},
+        "metric": {"goal": "maximize", "name": "test/best_prec1"},
         "parameters": {
             "lr": {"max": 1e-2, "min": 1e-5},
             "batch_size": {"values": [32, 64]},
@@ -18,6 +18,7 @@ if __name__ == '__main__':
     }
 
     # Create the sweep
-    sweep_id = wandb.sweep(sweep=hyperparam_dict, project="reverse_LRP_mnist")
+    # sweep_id = wandb.sweep(sweep=hyperparam_dict, project="reverse_LRP_mnist")
     # Run the sweep agent with the wrapper function
+    sweep_id = "charles-higgins/reverse_LRP_mnist/m8b0d485"
     wandb.agent(sweep_id, function=main, count=20)
