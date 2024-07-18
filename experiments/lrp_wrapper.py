@@ -96,9 +96,10 @@ class WrapperNet(nn.Module):
         self.info = []
         with track_activations(self):
             y =  self.model(x)
-        relevance = diff_softmax(y)
         if target_class != None:
-            relevance = relevance.gather(1, target_class.unsqueeze(1))
+            relevance = y.gather(1, target_class.unsqueeze(1))
+        else:
+            relevance = diff_softmax(y)
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
             # print('index:', index, '\tlayer:', layer[0])
             if index != 0 and relevance.shape != layer[2].shape:
