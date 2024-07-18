@@ -13,7 +13,8 @@ if __name__ == '__main__':
             "batch_size": {"values": [32, 64]},
             "_lambda": {"max": 0.5, "min": 0.001},
             "mode": {"values": ["ascending", "descending", None]},
-            "step_size": {"max": 1e-5, "min": 1e-7}
+            "step_size": {"max": 1e-5, "min": 1e-7},
+            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label"]}
         }
     }
 

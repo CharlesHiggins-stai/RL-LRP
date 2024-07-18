@@ -26,17 +26,16 @@ global args, best_prec1
 
 
 def main():
-    # wandb.init(project = "reverse_LRP_mnist",
-    #     sync_tensorboard=True, 
-    #     mode = 'disabled'
-    #     )
-    # extra_args = {
-    #     'Experiment Class': 'VGG11 Hybrid Loss'
-    # }   
-    # wandb.config.update(extra_args) 
-    # # cheap and lazy workaround to update the config for sweeps
-    # update_config_for_sweeps()
-    # print(wandb.config)
+    wandb.init(project = "reverse_LRP_mnist",
+        sync_tensorboard=True
+        )
+    extra_args = {
+        'Experiment Class': 'VGG11 Hybrid Loss'
+    }   
+    wandb.config.update(extra_args) 
+    # cheap and lazy workaround to update the config for sweeps
+    update_config_for_sweeps()
+    print(wandb.config)
     # set best precision to 0
     best_prec1 = 0
     # make sure we have a save dir
@@ -102,7 +101,10 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
+        if wandb.config.teacher_heatmap_mode == 'ground_truth_target':
+            train_only_on_positive(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
+        else:
+            train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
 
         # evaluate on validation set
         prec1 = validate(val_loader, learner_model, teacher_model, criterion)
@@ -124,6 +126,115 @@ def main():
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
     }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
+    
+def train_only_on_positive(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
+    """
+        Run one train epoch
+    """
+    assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
+    
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses_total = AverageMeter()
+    losses_cosine = AverageMeter()
+    losses_cross_entropy = AverageMeter()
+    top1 = AverageMeter()
+
+    # switch to train mode
+    learner_model.train()
+
+    end = time.time()
+    for i, (input, target) in enumerate(train_loader):
+
+        # measure data loading time
+        data_time.update(time.time() - end)
+
+        if wandb.config.cpu == False:
+            input = input.cuda()
+            target = target.cuda()
+        if wandb.config.half:
+            input = input.half()
+
+        ######################################################
+        #COPMUTE THE HYBIRD LOSS ON ONLY THE POSITIVE SAMPLES#
+        ######################################################
+        with torch.no_grad():
+            classifictions = nn.functional.log_softmax(learner_model.model(input), dim=1)
+            classifications = classifictions.argmax(dim=1)
+            # Find the indices where classifications and labels agree
+            matching_indices = (classifications == target).nonzero(as_tuple=True)[0]
+            pruned_inputs = input[matching_indices]
+            pruned_targets = target[matching_indices]
+            if pruned_targets.shape[0]>0:
+                _, target_maps = teacher_model(pruned_inputs)
+        # now track gradients for forward pass  
+        if pruned_targets.shape[0]>0:
+            pruned_output, pruned_heatmaps = learner_model(pruned_inputs)
+            target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
+            loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
+            # compute gradient and do SGD step
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+        ######################################################
+        ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
+        ######################################################
+        # now perform a regular backwards step using only cross entropy for all
+        full_output = nn.functional.log_softmax(learner_model.model(input), dim=1)
+        ce_loss = criterion.cross_entropy_loss(full_output, target)
+        optimizer.zero_grad()
+        ce_loss.backward()
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+        optimizer.step()
+        update_hybrid_loss(criterion)
+
+        output = full_output.float()
+        loss = loss.float()
+        cosine_loss = cosine_loss.float()
+        cross_entropy_loss = cross_entropy_loss.float()
+        # measure accuracy and record loss
+        prec1 = accuracy(output.data, target)[0]
+        losses_total.update(loss.item(), input.size(0))
+        losses_cosine.update(cosine_loss.item(), input.size(0))
+        losses_cross_entropy.update(cross_entropy_loss.item(), input.size(0))
+        top1.update(prec1.item(), input.size(0))
+        
+        # remove and reapply hooks to avoid memory leaks. 
+        learner_model.remove_hooks()
+        teacher_model.remove_hooks()
+        learner_model.reapply_hooks()
+        teacher_model.reapply_hooks()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if i % wandb.config.print_freq == 0:
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Cosine Loss {cosine_loss.val:.4f} ({cosine_loss.avg:.4f})\t'
+                  'Cross Entropy Loss {cross_entropy_loss.val:.4f} ({cross_entropy_loss.avg:.4f})\t'
+                  'loss_lambda {loss_lambda:.4f}\t'
+                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                      epoch, i, len(train_loader), batch_time=batch_time,
+                      data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
+                      ))
+            wandb.log({
+                "train/epoch": epoch,
+                "train/loss": losses_total.avg,
+                'train/loss_cosine': losses_cosine.avg,
+                'train/loss_cross_entropy': losses_cross_entropy.avg,
+                'train/accuracy_avg': top1.avg,
+                'train/accuracy_top1': top1.val,
+                'train/loss_lambda': criterion._lambda
+            })
+    # clean up memory
+    log_memory_usage(wandb_log=False)
+    free_memory()
+    del batch_time, data_time, losses_total, losses_cosine, losses_cross_entropy, top1
+    del output, pruned_output, pruned_heatmaps, target_maps, loss, cosine_loss, cross_entropy_loss, prec1
 
 def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
     """
@@ -161,8 +272,6 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             # would likely see as the heatmap for that class.
             if wandb.config.teacher_heatmap_mode == 'learner_label':
                 _, target_maps = teacher_model(input, output.argmax(dim=1))
-            elif wandb.config.teacher_heatmap_mode == 'ground_truth_target':
-                _, target_maps = teacher_model(input, target)
             elif wandb.config.teacher_heatmap_mode == 'default':
                 _, target_maps = teacher_model(input)
             else:
@@ -437,6 +546,7 @@ if __name__ == '__main__':
      
     wandb.init(project = "reverse_LRP_mnist",
         sync_tensorboard=True, 
+        mode = 'disabled'
         )
     wandb.config.update(args)
     main()
