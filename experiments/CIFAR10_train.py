@@ -155,7 +155,15 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
         # compute output
         output, heatmaps = learner_model(input)
         with torch.no_grad():
-            _, target_maps = teacher_model(input)
+            # rather than computing the heatmaps based on the label, or simply the most activated neuron
+            # we calculate the heatmap based on the selected class by the learner model, and show what the teacher model
+            # would likely see as the heatmap for that class.
+            if wandb.config.teacher_heatmap_mode == 'learner_label':
+                _, target_maps = teacher_model(input, output.argmax(dim=1))
+            elif wandb.config.teacher_heatmap_mode == 'ground_truth_target':
+                _, target_maps = teacher_model(input, target)
+            else:
+                _, target_maps = teacher_model(input)
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
@@ -366,7 +374,8 @@ def update_config_for_sweeps():
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar'
+        'teacher_checkpoint_path': '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
+        'teacher_heatmap_mode': 'learner_label'
     }   
     for key, value in default_args.items():
         if key not in wandb.config:
@@ -418,6 +427,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default="/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='learner_label')
     
     args = parser.parse_args()
     # enter the main loop]
