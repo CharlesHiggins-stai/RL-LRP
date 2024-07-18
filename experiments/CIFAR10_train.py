@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/charleshiggins/RL-LRP')
+sys.path.append('/home/tromero_client/RL-LRP')
 import argparse
 import os
 import shutil
@@ -26,16 +26,17 @@ global args, best_prec1
 
 
 def main():
-    wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True
-        )
-    extra_args = {
-        'Experiment Class': 'VGG11 Hybrid Loss'
-    }   
-    wandb.config.update(extra_args) 
-    # cheap and lazy workaround to update the config for sweeps
-    update_config_for_sweeps()
-    print(wandb.config)
+    # wandb.init(project = "reverse_LRP_mnist",
+    #     sync_tensorboard=True, 
+    #     mode = 'disabled'
+    #     )
+    # extra_args = {
+    #     'Experiment Class': 'VGG11 Hybrid Loss'
+    # }   
+    # wandb.config.update(extra_args) 
+    # # cheap and lazy workaround to update the config for sweeps
+    # update_config_for_sweeps()
+    # print(wandb.config)
     # set best precision to 0
     best_prec1 = 0
     # make sure we have a save dir
@@ -57,7 +58,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -67,7 +68,7 @@ def main():
         num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
+        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -162,8 +163,10 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                 _, target_maps = teacher_model(input, output.argmax(dim=1))
             elif wandb.config.teacher_heatmap_mode == 'ground_truth_target':
                 _, target_maps = teacher_model(input, target)
-            else:
+            elif wandb.config.teacher_heatmap_mode == 'default':
                 _, target_maps = teacher_model(input)
+            else:
+                raise ValueError("Incorrect value for teacher_heatmap_mode")
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
 
@@ -370,11 +373,11 @@ def update_config_for_sweeps():
         'pretrained': False,
         'half': False,
         'cpu': False,
-        'top_percent': 0.75,
+        'top_percent': 0.1,
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
+        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
         'teacher_heatmap_mode': 'learner_label'
     }   
     for key, value in default_args.items():
@@ -389,7 +392,7 @@ if __name__ == '__main__':
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
-    parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=300, type=int, metavar='N',
                         help='number of total epochs to run')
@@ -426,14 +429,14 @@ if __name__ == '__main__':
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
-                        default="/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+                        default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='learner_label')
     
     args = parser.parse_args()
     # enter the main loop]
      
     wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True
+        sync_tensorboard=True, 
         )
     wandb.config.update(args)
     main()
