@@ -66,7 +66,7 @@ def lrp_conv2d(layer, activation, R, eps=1e-6):
     return R_new
 
 def reverse_log_softmax(activation, R):
-    """
+    """ 
     Reverse the log_softmax operation.
     Arguments:
         layer: the log_softmax layer (nn.LogSoftmax)
