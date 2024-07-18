@@ -7,7 +7,7 @@ if __name__ == '__main__':
     hyperparam_dict = {
         "method": "bayes",
         "name": "hybrid_loss_sweep",
-        "metric": {"goal": "maximize", "name": "test/accuracy_top1"},
+        "metric": {"goal": "maximize", "name": "test/best_prec1"},
         "parameters": {
             "lr": {"max": 1e-2, "min": 1e-5},
             "batch_size": {"values": [32, 64]},

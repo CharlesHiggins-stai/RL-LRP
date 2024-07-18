@@ -113,6 +113,10 @@ def main():
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
         date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
+        wandb.log({
+            "test/best_prec1": best_prec1, 
+            "epoch": epoch + 1
+        })
         # save_checkpoint({
         #     'epoch': epoch + 1,
         #     'state_dict': learner_model.state_dict(),
@@ -122,7 +126,7 @@ def main():
     # moved to save models only after the training run is done
     date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
     save_checkpoint({
-            'epoch': epoch + 1,
+            'epoch': epoch,
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
     }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
@@ -221,15 +225,15 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
                       ))
-            wandb.log({
-                "train/epoch": epoch,
-                "train/loss": losses_total.avg,
-                'train/loss_cosine': losses_cosine.avg,
-                'train/loss_cross_entropy': losses_cross_entropy.avg,
-                'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val,
-                'train/loss_lambda': criterion._lambda
-            })
+    wandb.log({
+        "train/epoch": epoch,
+        "train/loss": losses_total.avg,
+        'train/loss_cosine': losses_cosine.avg,
+        'train/loss_cross_entropy': losses_cross_entropy.avg,
+        'train/accuracy_avg': top1.avg,
+        'train/accuracy_top1': top1.val,
+        'train/loss_lambda': criterion._lambda
+    })
     # clean up memory
     log_memory_usage(wandb_log=False)
     free_memory()
@@ -319,15 +323,15 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses_total, cosine_loss=losses_cosine, cross_entropy_loss=losses_cross_entropy, top1=top1, loss_lambda=criterion._lambda
                       ))
-            wandb.log({
-                "train/epoch": epoch,
-                "train/loss": losses_total.avg,
-                'train/loss_cosine': losses_cosine.avg,
-                'train/loss_cross_entropy': losses_cross_entropy.avg,
-                'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val,
-                'train/loss_lambda': criterion._lambda
-            })
+    wandb.log({
+        "train/epoch": epoch,
+        "train/loss": losses_total.avg,
+        'train/loss_cosine': losses_cosine.avg,
+        'train/loss_cross_entropy': losses_cross_entropy.avg,
+        'train/accuracy_avg': top1.avg,
+        'train/accuracy_top1': top1.val,
+        'train/loss_lambda': criterion._lambda
+    })
     # clean up memory
     log_memory_usage(wandb_log=False)
     free_memory()
