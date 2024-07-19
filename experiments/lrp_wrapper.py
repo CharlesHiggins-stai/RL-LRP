@@ -118,7 +118,7 @@ class WrapperNet(nn.Module):
                 nan_mask = torch.isnan(relevance)
                 relevance = relevance.masked_fill(nan_mask, 0.0)
         if self.hybrid_loss == True:
-            return torch.nn.functional.log_softmax(y), relevance
+            return torch.nn.functional.log_softmax(y, dim=1), relevance
         else:
             return relevance
 
