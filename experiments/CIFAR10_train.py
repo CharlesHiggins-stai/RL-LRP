@@ -107,11 +107,14 @@ def main():
             train(train_loader, learner_model, teacher_model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, learner_model, teacher_model, criterion)
+        prec1 = validate(val_loader, learner_model, teacher_model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
+        wandb.log({
+            'test/best_prec1': best_prec1
+        })
         date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
         wandb.log({
             "test/best_prec1": best_prec1, 
@@ -338,7 +341,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
     del batch_time, data_time, losses_total, losses_cosine, losses_cross_entropy, top1
     del output, heatmaps, target_maps, loss, cosine_loss, cross_entropy_loss, prec1
 
-def validate(val_loader, learner_model, teacher_model, criterion):
+def validate(val_loader, learner_model, teacher_model, criterion, epoch):
     """
     Run evaluation
     """
@@ -404,7 +407,8 @@ def validate(val_loader, learner_model, teacher_model, criterion):
         'test/loss_cosine': losses_cosine.avg,
         'test/loss_cross_entropy': losses_cross_entropy.avg,
         'test/accuracy_top1': top1.val,
-        'test/accuracy_avg': top1.avg
+        'test/accuracy_avg': top1.avg, 
+        'test/epoch': epoch
     })
 
     print(' * Prec@1 {top1.avg:.3f}'
