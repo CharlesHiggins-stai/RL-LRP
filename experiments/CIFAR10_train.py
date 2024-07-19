@@ -475,7 +475,7 @@ def get_teacher_model(teacher_checkpoint_path):
 def update_config_for_sweeps():
     default_args = {
         'arch': 'vgg11',
-        'workers': 2,
+        'workers': 0,
         'epochs': 300,
         'start_epoch': 0,
         'momentum': 0.9,
@@ -505,7 +505,7 @@ if __name__ == '__main__':
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=300, type=int, metavar='N',
                         help='number of total epochs to run')
