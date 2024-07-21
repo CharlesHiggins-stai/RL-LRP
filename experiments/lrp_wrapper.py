@@ -109,10 +109,13 @@ class WrapperNet(nn.Module):
             if isinstance(layer[0], tuple):
             # If layer is layer or simply activation function, we need to treat differently 
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
+                # print(f'index: {index} layer:', layer[0][1])
             else:
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
+                # print(f'index: {index} layer:', layer[0])
             # print('total relevance: ', relevance.flatten().sum().item())
             # print('relevance mean value:', relevance.flatten().mean().item())
+            # print('relevance shape:', relevance.shape)
             if torch.isnan(relevance).any():
                 print("Nan found here --- need to work out where this occured")
                 nan_mask = torch.isnan(relevance)
