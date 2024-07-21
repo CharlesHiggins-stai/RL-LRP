@@ -38,7 +38,7 @@ def lrp_linear(layer, activation, R, eps=1e-6):
     """
     W = layer.weight
     # Z = W @ activation.t() + layer.bias[:, None] + eps
-    Z = layer.forward(activation)
+    Z = F.relu(layer.forward(activation))
     S = R / (Z + eps)
     C = W.t() @ S.t()
     R_new = activation * C.t()
