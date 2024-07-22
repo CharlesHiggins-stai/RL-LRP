@@ -1,5 +1,6 @@
+ROOT_DIR = "/home/charleshiggins/RL-LRP"
 import sys
-sys.path.append('/home/tromero_client/RL-LRP')
+sys.path.append(ROOT_DIR)
 import argparse
 import os
 import shutil
@@ -17,6 +18,7 @@ import wandb
 from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, log_memory_usage, free_memory
 from experiments import HybridCosineDistanceCrossEntopyLoss, WrapperNet
 
+
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
                      and name.startswith("vgg")
@@ -26,9 +28,9 @@ global args, best_prec1
 
 
 def main():
-    wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True
-        )
+    # wandb.init(project = "reverse_LRP_mnist",
+    #     sync_tensorboard=True
+    #     )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -57,7 +59,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
+        datasets.CIFAR10(root=f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -67,7 +69,7 @@ def main():
         num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
+        datasets.CIFAR10(root=f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -181,8 +183,10 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
             # compute gradient and do SGD step
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            cross_entropy_loss.backward()
+            torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
+            # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
         ######################################################
@@ -272,24 +276,30 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             input = input.half()
 
         # compute output
-        output, heatmaps = learner_model(input)
         with torch.no_grad():
             # rather than computing the heatmaps based on the label, or simply the most activated neuron
             # we calculate the heatmap based on the selected class by the learner model, and show what the teacher model
             # would likely see as the heatmap for that class.
             if wandb.config.teacher_heatmap_mode == 'learner_label':
-                _, target_maps = teacher_model(input, output.argmax(dim=1))
+                output, heatmaps = learner_model(input)
+                _, target_maps = teacher_model(input, output.detach().argmax(dim=1))
             elif wandb.config.teacher_heatmap_mode == 'default':
                 _, target_maps = teacher_model(input)
             else:
                 raise ValueError("Incorrect value for teacher_heatmap_mode")
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
+        # now compute forward pass with grad
+        if wandb.config.teacher_heatmap_mode == 'learner_label':
+            output, heatmaps = learner_model(input, target)
+        elif wandb.config.teacher_heatmap_mode == 'default':
+            output, heatmaps = learner_model(input)
+        else:
+            raise ValueError("Incorrect code executed here --- something done gone fucked up")
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
-
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=0.5)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
 
@@ -490,11 +500,11 @@ def update_config_for_sweeps():
         'pretrained': False,
         'half': False,
         'cpu': False,
-        'top_percent': 0.1,
+        'top_percent': 0.5,
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
+        'teacher_checkpoint_path': f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
         'teacher_heatmap_mode': 'learner_label'
     }   
     for key, value in default_args.items():
@@ -546,8 +556,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
-                        default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='learner_label')
+                        default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='ground_truth_target')
     
     args = parser.parse_args()
     # enter the main loop]
