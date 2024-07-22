@@ -1,5 +1,6 @@
+ROOT_DIR = "/home/charleshiggins/RL-LRP"
 import sys
-sys.path.append('/home/tromero_client/RL-LRP')
+sys.path.append(ROOT_DIR)
 import argparse
 import os
 import shutil
@@ -16,6 +17,7 @@ import baselines.trainVggBaselineForCIFAR10.vgg as vgg
 import wandb
 from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, log_memory_usage, free_memory
 from experiments import HybridCosineDistanceCrossEntopyLoss, WrapperNet
+
 
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
@@ -57,7 +59,7 @@ def main():
                                         std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
+        datasets.CIFAR10(root=f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -67,7 +69,7 @@ def main():
         num_workers=wandb.config.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
+        datasets.CIFAR10(root=f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -502,7 +504,7 @@ def update_config_for_sweeps():
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
-        'teacher_checkpoint_path': '/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
+        'teacher_checkpoint_path': f'{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar', 
         'teacher_heatmap_mode': 'learner_label'
     }   
     for key, value in default_args.items():
@@ -554,7 +556,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_lambda', type=float, default=0.5, help='max value for lambda')
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
-                        default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
+                        default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
     parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='ground_truth_target')
     
     args = parser.parse_args()

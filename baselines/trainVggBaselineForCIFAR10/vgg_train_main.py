@@ -25,7 +25,7 @@ parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg19',
                     choices=model_names,
                     help='model architecture: ' + ' | '.join(model_names) +
                     ' (default: vgg19)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -146,16 +146,16 @@ def main():
         train(train_loader, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        prec1 = validate(val_loader, model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'state_dict': model.state_dict(),
-            'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch)))
+    save_checkpoint({
+        'epoch': epoch + 1,
+        'state_dict': model.state_dict(),
+        'best_prec1': best_prec1,
+    }, is_best, filename=os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch)))
 
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -210,15 +210,15 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
-            wandb.log({
-                "train/epoch": epoch,
-                "train/loss": losses.avg,
-                'train/accuracy_avg': top1.avg,
-                'train/accuracy_top1': top1.val
-            })
+    wandb.log({
+        "train/epoch": epoch,
+        "train/loss": losses.avg,
+        'train/accuracy_avg': top1.avg,
+        'train/accuracy_top1': top1.val
+    })
 
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, epoch):
     """
     Run evaluation
     """
@@ -262,11 +262,12 @@ def validate(val_loader, model, criterion):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       i, len(val_loader), batch_time=batch_time, loss=losses,
                       top1=top1))
-            wandb.log({
-                "test/loss_val": losses.avg,
-                'test/accuracy_top1': top1.val,
-                'test/accuracy_avg': top1.avg
-            })
+    wandb.log({
+        "test/epoch": epoch,
+        "test/loss_val": losses.avg,
+        'test/accuracy_top1': top1.val,
+        'test/accuracy_avg': top1.avg
+    })
 
     print(' * Prec@1 {top1.avg:.3f}'
           .format(top1=top1))
