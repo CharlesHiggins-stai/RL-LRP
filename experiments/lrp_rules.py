@@ -4,9 +4,9 @@ import torch.nn.functional as F
 
 def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, relevance:torch.Tensor, layer_type:str=None, extra=None):
     if isinstance(layer, torch.nn.Linear):
-        R = lrp_linear(layer, activations_at_start, relevance)
+        R = lrp_linear_alpha_beta(layer, activations_at_start, relevance)
     elif isinstance(layer, torch.nn.Conv2d):
-        R = lrp_conv2d(layer, activations_at_start, relevance)
+        R = lrp_conv2d_alpha_beta(layer, activations_at_start, relevance)
     elif isinstance(layer, torch.nn.ReLU) or layer_type == 'ReLU':
         R = relevance * (activations_at_start > 0).float()
     elif isinstance(layer, torch.nn.LogSoftmax) or layer_type == 'LogSoftmax':
