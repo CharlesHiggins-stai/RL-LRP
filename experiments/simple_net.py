@@ -55,4 +55,5 @@ class SimpleRNet(nn.Module):
         x = x.view(-1, 8000)  # Flatten the output for the classifier
         x = self.classifier(x)
         x = torch.nn.functional.log_softmax(x, dim=1)
+
         return x

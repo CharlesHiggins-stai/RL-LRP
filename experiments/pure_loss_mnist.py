@@ -54,38 +54,49 @@ def train_model(model, optimizer, criterion, train_loader, device, attention_fun
         })
     return model, np.mean(total_losses)
 
-def train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, max_epochs, print_freq=10):
+def train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, max_epochs, print_freq=10, mode = 'learner_label'):
     for x in range(max_epochs):
         losses = []
         accuracy_list = []
         model.train()
         for data, target in train_loader:
             data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()
-            output, heatmap = model(data)
-            target_heatmap = apply_threshold(data, threshold=0.95)
-            with torch.no_grad():
-                output_classification = model.model(data)
-                correct_indx = (output_classification.argmax(dim=1) == target).nonzero()
-                if correct_indx.size(0) == 0:
-                    print('empty batch -- skipping training data')
-                    continue
-                pruned_data = data[correct_indx[0]]
-                pruned_target = target[correct_indx[0]]
-                pruned_target_heatmap = target_heatmap[correct_indx[0]]
-            
-            pruned_output, pruned_heatmap = model(pruned_data)
-            loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmap, pruned_target_heatmap, pruned_output, pruned_target)
-            optimizer.zero_grad()
-            cosine_loss.backward()
-            output, heatmap = model(data)
+            if mode == 'ground_truth_label':
+                target_heatmap = apply_threshold(data, threshold=0.95)
+                with torch.no_grad():
+                    output_classification = model.model(data)
+                    correct_indx = (output_classification.argmax(dim=1) == target).nonzero()
+                    if correct_indx.size(0) == 0:
+                        print('empty batch -- skipping training data')
+                        continue
+                    pruned_data = data[correct_indx[0]]
+                    pruned_target = target[correct_indx[0]]
+                    pruned_target_heatmap = target_heatmap[correct_indx[0]]
+                
+                pruned_output, pruned_heatmap = model(pruned_data)
+                loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmap, pruned_target_heatmap, pruned_output, pruned_target)
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                with torch.no_grad():
+                    output, heatmap = model(data)
+            elif mode == 'learner_label':
+                output, heatmap = model(data, target)
+                target_heatmap = apply_threshold(data, threshold=0.95)
+                loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
+                optimizer.zero_grad()
+                cosine_loss.backward()
+                torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                optimizer.step()
             # loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
             # optimizer.zero_grad()
-            # cross_entropy_loss.backward()
+            # cosine_loss.backward()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            # optimizer.step()
             classifications = output.argmax(dim=1).squeeze()
             correct = classifications.eq(target).sum().item()
             accuracy = (correct / len(target)) * 100
-            optimizer.step()
             losses.append(loss.item())
             accuracy_list.append(accuracy)
         print('Epoch: ', x)
@@ -177,7 +188,7 @@ if __name__ == "__main__":
     # Adding arguments
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility (default: 0).')
     parser.add_argument('--batch_size', type=int, default = 64, help='Batch size for training.')
-    parser.add_argument('--lr', type=float, default = 1e-4, help='Learning rate for training.')
+    parser.add_argument('--lr', type=float, default = 1e-2, help='Learning rate for training.')
     parser.add_argument('--output_dir', type=str, default = "experiments/data", help='Directory to save output results.')
     parser.add_argument('--save_frequency', type=int, default = 25, help='Frequency to save model checkpoints.')
     parser.add_argument('--data_dir', type=str, default = "experiments/data", help='Directory to find training data')
@@ -220,6 +231,6 @@ if __name__ == "__main__":
     # model.to(device)
     # main(model, optimizer, criterion, train_loader, test_loader, device, apply_threshold)
     model = WrapperNet(SimpleNet(), hybrid_loss=True)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3, eps=1e-8)
     criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=0.1)
     train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, wandb.config.max_epochs)

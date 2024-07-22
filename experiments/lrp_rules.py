@@ -115,7 +115,7 @@ def lrp_conv2d(layer, activation, R, eps=1e-2):
     W = layer.weight
     X = activation
     Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) 
-    S = safe_divide(R,Z, eps)
+    S = R / (Z + eps)
     C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
     R_new = X * C
     R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
@@ -262,6 +262,10 @@ def reverse_adaptive_avg_pool2d(relevance, input_activation, eta = 1e-9):
     return upsampled_relevance * (input_activation / (Z_upsampled + eta))
 
 
+# def safe_divide(numerator, denominator, eps):
+#     # Where denominator is not zero, perform the division, otherwise, return zero
+#     return torch.where(denominator != 0, numerator / denominator + eps , torch.zeros_like(numerator))
+
 def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
-    return torch.where(denominator != 0, numerator / denominator + eps , torch.zeros_like(numerator))
+    return numerator / (denominator + eps)
