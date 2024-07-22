@@ -21,5 +21,5 @@ if __name__ == '__main__':
     # Create the sweep
     # sweep_id = wandb.sweep(sweep=hyperparam_dict, project="reverse_LRP_mnist")
     # Run the sweep agent with the wrapper function
-    sweep_id = "charles-higgins/reverse_LRP_mnist/m8b0d485"
+    sweep_id = "charles-higgins/reverse_LRP_mnist/q6bk7fd4"
     wandb.agent(sweep_id, function=main, count=20)

@@ -125,7 +125,6 @@ def main():
         #     'state_dict': learner_model.state_dict(),
         #     'best_prec1': best_prec1,
         # }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
-    wandb.finish()
     # moved to save models only after the training run is done
     date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
     save_checkpoint({
@@ -133,6 +132,7 @@ def main():
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
     }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
+    wandb.finish()
     
 def train_only_on_positive(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
     """
