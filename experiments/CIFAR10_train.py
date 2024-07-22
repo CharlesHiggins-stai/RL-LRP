@@ -181,8 +181,10 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
             # compute gradient and do SGD step
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            cross_entropy_loss.backward()
+            torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
+            # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
         ######################################################
@@ -553,7 +555,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default="/home/tromero_client/RL-LRP/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='learner_label')
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='ground_truth_target')
     
     args = parser.parse_args()
     # enter the main loop]
