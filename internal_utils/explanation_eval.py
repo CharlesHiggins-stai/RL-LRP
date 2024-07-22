@@ -41,7 +41,7 @@ def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRe
     val_loader = DataLoader(
         imagenette_train,
         batch_size=32,
-        shuffle=True,
+        shuffle=False,
         num_workers=2
     )
     
@@ -129,7 +129,16 @@ def condense_to_heatmap(images):
         # already in heatmap form
         return images
     assert images.dim() == 4, "Input tensor must have 4 dimensions --- assumes a batch of inputs"
-    heatmaps, _ = torch.max(images, dim=1)
+    # make sure total sum of outputs is 1
+    
+    # Normalize each image in the batch independently
+    total_sum_per_image = torch.sum(images, dim=(1, 2, 3), keepdim=True)
+    normalized_tensor = images / total_sum_per_image
+    print(f"normalized_tensor shape: {normalized_tensor.shape}")
+    print(f"normalized_tensor sum: {torch.sum(normalized_tensor)}")
+    # Create heatmap by taking the maximum value across the channel dimension
+    heatmaps = torch.max(normalized_tensor, dim=1).values
+
     return heatmaps
 
 def compute_sparseness_of_heatmap(input_images):

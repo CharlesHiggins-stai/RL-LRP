@@ -4,6 +4,7 @@ from .mnist_threshold import apply_threshold, load_mnist
 from .cosine_dist_loss import CosineDistanceLoss, HybridCosineDistanceCrossEntopyLoss
 from .poc_simple_net import ManualCNN
 from .lrp_rules import reverse_layer, diff_softmax
+from .evaluation_functions import perform_lrp_plain, perform_loss_lrp, perform_lrp_captum, perform_gradcam
 __all__ = ["WrapperNet", 
            "SimpleNet", 
            "SimpleRNet", 
@@ -13,4 +14,9 @@ __all__ = ["WrapperNet",
            "ManualCNN",
            "reverse_layer",
            "diff_softmax",
-           "HybridCosineDistanceCrossEntopyLoss"]
+           "HybridCosineDistanceCrossEntopyLoss", 
+           "perform_lrp_plain",
+           "perform_loss_lrp",
+           "perform_lrp_captum",
+            "perform_gradcam"
+           ]
