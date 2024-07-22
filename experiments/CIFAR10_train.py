@@ -26,9 +26,9 @@ global args, best_prec1
 
 
 def main():
-    wandb.init(project = "reverse_LRP_mnist",
-        sync_tensorboard=True
-        )
+    # wandb.init(project = "reverse_LRP_mnist",
+    #     sync_tensorboard=True
+    #     )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -272,24 +272,30 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             input = input.half()
 
         # compute output
-        output, heatmaps = learner_model(input)
         with torch.no_grad():
             # rather than computing the heatmaps based on the label, or simply the most activated neuron
             # we calculate the heatmap based on the selected class by the learner model, and show what the teacher model
             # would likely see as the heatmap for that class.
             if wandb.config.teacher_heatmap_mode == 'learner_label':
-                _, target_maps = teacher_model(input, output.argmax(dim=1))
+                output, heatmaps = learner_model(input)
+                _, target_maps = teacher_model(input, output.detach().argmax(dim=1))
             elif wandb.config.teacher_heatmap_mode == 'default':
                 _, target_maps = teacher_model(input)
             else:
                 raise ValueError("Incorrect value for teacher_heatmap_mode")
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
+        # now compute forward pass with grad
+        if wandb.config.teacher_heatmap_mode == 'learner_label':
+            output, heatmaps = learner_model(input, target)
+        elif wandb.config.teacher_heatmap_mode == 'default':
+            output, heatmaps = learner_model(input)
+        else:
+            raise ValueError("Incorrect code executed here --- something done gone fucked up")
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
-
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=0.5)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
 
@@ -490,7 +496,7 @@ def update_config_for_sweeps():
         'pretrained': False,
         'half': False,
         'cpu': False,
-        'top_percent': 0.1,
+        'top_percent': 0.5,
         'save_dir': 'data/save_vgg11',
         'max_lambda': 0.5,
         'min_lambda': 0.0,
