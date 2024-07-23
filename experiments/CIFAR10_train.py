@@ -92,7 +92,7 @@ def main():
         learner_model.half()
         criterion.half()
 
-    optimizer = torch.optim.SGD(learner_model.parameters(), wandb.config.lr,
+    optimizer = torch.optim.SGD(learner_model.model.parameters(), wandb.config.lr,
                                 momentum=wandb.config.momentum,
                                 weight_decay=wandb.config.weight_decay)
 
@@ -287,28 +287,34 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             # we calculate the heatmap based on the selected class by the learner model, and show what the teacher model
             # would likely see as the heatmap for that class.
             if wandb.config.teacher_heatmap_mode == 'learner_label':
-                output, heatmaps = learner_model(input)
+                with torch.no_grad():
+                    output, heatmaps = learner_model(input)
                 _, target_maps = teacher_model(input, output.detach().argmax(dim=1))
-            elif wandb.config.teacher_heatmap_mode == 'default':
+            elif wandb.config.teacher_heatmap_mode == 'default' or wandb.config.teacher_heatmap_mode == 'sanity_check':
                 _, target_maps = teacher_model(input)
+            elif wandb.config.teacher_heatmap_mode == 'sanity_check':
+                pass
             else:
                 raise ValueError("Incorrect value for teacher_heatmap_mode")
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
         # now compute forward pass with grad
         if wandb.config.teacher_heatmap_mode == 'learner_label':
             output, heatmaps = learner_model(input, target)
-        elif wandb.config.teacher_heatmap_mode == 'default':
+        elif wandb.config.teacher_heatmap_mode == 'default' or wandb.config.teacher_heatmap_mode == 'sanity_check':
             output, heatmaps = learner_model(input)
         else:
             raise ValueError("Incorrect code executed here --- something done gone fucked up")
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=0.5)  # Clip gradients
+        if wandb.config.teacher_heatmap_mode == 'sanity_check':
+            cross_entropy_loss.backward()
+        else:
+            loss.backward()
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
-
+        # store losses
         output = output.float()
         loss = loss.float()
         cosine_loss = cosine_loss.float()
@@ -533,7 +539,7 @@ if __name__ == '__main__':
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
-    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=300, type=int, metavar='N',
                         help='number of total epochs to run')
@@ -571,7 +577,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='default')
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are sanity_check, learner_label, ground_truth_target and default', default='sanity_check')
     
     args = parser.parse_args()
     # enter the main loop]

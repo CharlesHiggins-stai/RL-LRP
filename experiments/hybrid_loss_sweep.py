@@ -16,7 +16,7 @@ if __name__ == '__main__':
             "mode": {"values": ["ascending", "descending", None]},
             "step_size": {"max": 1e-5, "min": 1e-7},
             "top_percent": {"max": 0.9, "min": 0.1},
-            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label", "default"]}
+            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label", "default", 'sanity_check']}
         }
     }
 

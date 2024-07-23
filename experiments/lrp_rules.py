@@ -96,7 +96,8 @@ def lrp_linear_alpha_beta(layer, activation, R, alpha=1, beta=1, eps=1e-2):
     
     # compute alpha and beta values now
     R_new = alpha * R_new_plus + beta * R_new_minus
-    
+    if torch.isnan(R_new).any():
+        print('Nan crept in here --- time to debug this mother fucker')
     # Normalise the relevance scores to match the input
     # R_new_sum = R_new.sum(dim=1, keepdim=True)
     # R_sum = R.sum(dim=1, keepdim=True)
@@ -182,8 +183,10 @@ def lrp_conv2d_alpha_beta(layer, activation, R, alpha=1, beta=0, eps=1e-2):
     R_new_minus = (activation_neg * C_plus_minus) + (activation_pos + C_minus_plus)
     
     R_new = alpha * R_new_plus + beta * R_new_minus
-
-    # Normalize the relevance scores if necessary
+    
+    if torch.isnan(R_new).any():
+        print('Nan crept in here --- time to debug this mother fucker')
+    # Normalize the relevance scores if necessar
     # R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
     # R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
     # R_new = R_new * (R_sum / (R_new_sum + eps))
@@ -306,4 +309,5 @@ def reverse_batch_norm2d(layer, activation, relevance, eps=1e-2):
 
 def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
-    return numerator / (denominator + eps)
+    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps
+    return torch.div(numerator, safe_denom)
