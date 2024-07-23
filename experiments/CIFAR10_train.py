@@ -15,7 +15,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import baselines.trainVggBaselineForCIFAR10.vgg as vgg
 import wandb
-from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, log_memory_usage, free_memory
+from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, update_dictionary_patch_2, log_memory_usage, free_memory
 from experiments import HybridCosineDistanceCrossEntopyLoss, WrapperNet
 
 
@@ -183,9 +183,9 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
             # compute gradient and do SGD step
             optimizer.zero_grad()
-            cross_entropy_loss.backward()
-            torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
-            # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            loss.backward()
+            # torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
+            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
             optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
@@ -482,8 +482,16 @@ def get_teacher_model(teacher_checkpoint_path):
     checkpoint = torch.load(teacher_checkpoint_path)
     # assume teacher model is vgg11 for now
     teacher = vgg.vgg11()
-    checkpoint = update_dictionary_patch(checkpoint)
-    teacher.load_state_dict(checkpoint['new_state_dict'])
+    try: 
+        checkpoint = update_dictionary_patch(checkpoint)
+        teacher.load_state_dict(checkpoint['new_state_dict'])
+    except:
+        print('Incorrect patch specified')
+    try:
+        checkpoint = update_dictionary_patch_2(checkpoint)
+        teacher.load_state_dict
+    except:
+        print("fuck. Didn't work either. Shit.")
     return teacher
 
 def update_config_for_sweeps():
