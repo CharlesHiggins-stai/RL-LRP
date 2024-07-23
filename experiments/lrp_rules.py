@@ -13,6 +13,8 @@ def reverse_layer(activations_at_start:torch.Tensor, layer:torch.nn.Module, rele
         R = reverse_log_softmax(activations_at_start, relevance)
     elif isinstance(layer, torch.nn.MaxPool2d) or layer_type == 'MaxPool2d':
         R = reverse_max_pool2d(relevance, extra["indices"], activations_at_start, extra["stride"])
+    elif isinstance(layer, torch.nn.BatchNorm2d) or layer_type == 'BatchNorm2d':
+        R = reverse_batch_norm2d(layer, activations_at_start, relevance)
     elif isinstance(layer, torch.nn.Dropout or layer_type == 'Dropout'):
         # don't bother reversing --- assume that dropout has no effect...
         # cannot perform gradient op, and 
@@ -146,16 +148,15 @@ def lrp_conv2d_alpha_beta(layer, activation, R, alpha=1, beta=0, eps=1e-2):
     # Compute positive and negeative parts of the activation
     activation_pos = torch.clamp(activation, min=0)
     activation_neg = torch.clamp(activation, max=0)
-    
+
     bias_pos = torch.clamp(bias, min=0)
     bias_neg = torch.clamp(bias, max=0)
-
     # Forward pass for positive and negative contributions
     Z_plus_plus = F.conv2d(activation_pos, W_plus, bias=bias_pos, stride=layer.stride, padding=layer.padding) 
     Z_minus_minus = F.conv2d(activation_neg, W_minus, bias= bias_pos, stride=layer.stride, padding=layer.padding) 
     Z_plus_minus = F.conv2d(activation_neg, W_plus, bias= bias_neg, stride=layer.stride, padding=layer.padding) 
-    Z_minus_plus = F.conv2d(activation_pos, W_minus, bias= bias_neg, stride=layer.stride, padding=layer.padding) 
-    # group the positive and negative parts
+    Z_minus_plus = F.conv2d(activation_pos, W_minus, bias= bias_neg, stride=layer.stride, padding=layer.padding)
+
     Z_plus = Z_plus_plus + Z_minus_minus
     Z_minus = Z_minus_plus + Z_plus_minus
 
@@ -172,11 +173,15 @@ def lrp_conv2d_alpha_beta(layer, activation, R, alpha=1, beta=0, eps=1e-2):
     C_plus_minus = F.conv_transpose2d(S_minus, W_plus, stride=layer.stride, padding=layer.padding)
     C_minus_plus = F.conv_transpose2d(S_minus, W_minus, stride=layer.stride, padding=layer.padding)
     
+    
     # Combine contributions to get the final relevance scores
+    if activation_pos.shape != C_plus_plus.shape:
+        print('shapes are fucked, so adding extra padding')
+    
     R_new_plus = (activation_pos * C_plus_plus) + (activation_neg * C_minus_minus)
     R_new_minus = (activation_neg * C_plus_minus) + (activation_pos + C_minus_plus)
     
-    R_new = alpha* R_new_plus + beta * R_new_minus
+    R_new = alpha * R_new_plus + beta * R_new_minus
 
     # Normalize the relevance scores if necessary
     # R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
@@ -261,6 +266,39 @@ def reverse_adaptive_avg_pool2d(relevance, input_activation, eta = 1e-9):
     
     return upsampled_relevance * (input_activation / (Z_upsampled + eta))
 
+def reverse_batch_norm2d(layer, activation, relevance, eps=1e-2):
+    """Reverse the batch normalisation operation.
+
+    Args:
+        relevance (torch.Tensor): Relevance scores from the previous layer.
+        layer (torch.Tensor): Layer
+        activation (torch.Tensor): activation incoming to the layer
+        eps (error, optional): Prevents div by zero errors. Defaults to 1e-2.
+    """
+    # Get parameters of the batch normalization layer
+    weight = layer.weight
+    bias = layer.bias
+    mean = layer.running_mean
+    var = layer.running_var
+    eps = layer.eps
+
+    # Calculate the normalized input
+    normalized_input = (activation - mean[None, :, None, None]) / torch.sqrt(var[None, :, None, None] + eps)
+
+    # Calculate the relevance score for each feature map
+    weight_expanded = weight[None, :, None, None]
+    relevance_input = relevance * weight_expanded
+    bias_expanded = bias[None, :, None, None]
+
+    # Normalize the relevance
+    relevance_sum = relevance_input.sum(dim=(2, 3), keepdim=True) + eps
+    relevance_normed = relevance_input / relevance_sum
+
+    # Propagate the relevance through the layer
+    r_new = relevance_normed * normalized_input + bias_expanded
+
+    return r_new
+    
 
 # def safe_divide(numerator, denominator, eps):
 #     # Where denominator is not zero, perform the division, otherwise, return zero

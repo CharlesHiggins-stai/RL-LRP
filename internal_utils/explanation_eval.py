@@ -199,6 +199,7 @@ def get_teacher_model():
     """ Load and return a pretrained VGG16 model from TorchVision"""
     # Load the pretrained VGG16 model
     model = torchvision.models.vgg16(weights=torchvision.models.VGG16_Weights.IMAGENET1K_V1)
+    # model = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1)
     
     # Freeze all parameters
     for param in model.parameters():

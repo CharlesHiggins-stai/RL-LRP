@@ -54,41 +54,64 @@ def train_model(model, optimizer, criterion, train_loader, device, attention_fun
         })
     return model, np.mean(total_losses)
 
-def train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, max_epochs, print_freq=10, mode = 'learner_label'):
+def train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, max_epochs, print_freq=10, mode = 'ground_truth_label'):
     for x in range(max_epochs):
         losses = []
         accuracy_list = []
         model.train()
         for data, target in train_loader:
             data, target = data.to(device), target.to(device)
+            
             if mode == 'ground_truth_label':
                 target_heatmap = apply_threshold(data, threshold=0.95)
                 with torch.no_grad():
                     output_classification = model.model(data)
-                    correct_indx = (output_classification.argmax(dim=1) == target).nonzero()
-                    if correct_indx.size(0) == 0:
-                        print('empty batch -- skipping training data')
-                        continue
-                    pruned_data = data[correct_indx[0]]
-                    pruned_target = target[correct_indx[0]]
-                    pruned_target_heatmap = target_heatmap[correct_indx[0]]
+                correct_indx = (output_classification.argmax(dim=1) == target).nonzero()
+                if correct_indx.size(0) == 0:
+                    print('empty batch -- skipping training data')
+                    continue
+                # print(correct_indx.shape)
+                pruned_data = data[correct_indx.squeeze()]
+                pruned_target = target[correct_indx.squeeze()]
+                pruned_target_heatmap = target_heatmap[correct_indx.squeeze()]
                 
+                if len(pruned_data.shape) == 3:
+                    pruned_data = pruned_data.unsqueeze(0)
+                    pruned_target = pruned_target.unsqueeze(0)
+                    pruned_target_heatmap = pruned_target_heatmap.unsqueeze(0)
+                    
+                # print(pruned_data.shape)
                 pruned_output, pruned_heatmap = model(pruned_data)
                 loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmap, pruned_target_heatmap, pruned_output, pruned_target)
                 optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
-                with torch.no_grad():
-                    output, heatmap = model(data)
+                # now train the model on CE loss alone
+                output, heatmap = model(data)
+                ce_loss = criterion.cross_entropy_loss(output, target)
+                optimizer.zero_grad()
+                ce_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
             elif mode == 'learner_label':
                 output, heatmap = model(data, target)
                 target_heatmap = apply_threshold(data, threshold=0.95)
                 loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
                 optimizer.zero_grad()
-                cosine_loss.backward()
+                loss.backward()
                 torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
                 optimizer.step()
+            elif mode == "default":
+                output, heatmap = model(data)
+                target_heatmap = apply_threshold(data, threshold=0.95)
+                loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                optimizer.step()
+            else:
+                raise ValueError("mode must be one of ['ground_truth_label', 'learner_label', 'default']")
             # loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
             # optimizer.zero_grad()
             # cosine_loss.backward()
@@ -99,6 +122,11 @@ def train_simple_model(model, optimizer, criterion, train_loader, test_loader, d
             accuracy = (correct / len(target)) * 100
             losses.append(loss.item())
             accuracy_list.append(accuracy)
+            wandb.log({
+                "train/accuracy": np.mean(accuracy_list),
+                "train/combined_loss": np.mean(losses),
+                "train/accuracy_top": np.max(accuracy_list)
+            })
         print('Epoch: ', x)
         print(f"Train Loss: {np.mean(losses)}, Train Accuracy: {np.mean(accuracy_list)}")
         model.eval()
@@ -116,6 +144,12 @@ def train_simple_model(model, optimizer, criterion, train_loader, test_loader, d
             test_losses.append(loss.item())
             test_accuracies.append(accuracy)
         print(f"Test Loss: {np.mean(test_losses)}, Test Accuracy: {np.mean(test_accuracies)}")
+        wandb.log({
+            "test/accuracy": np.mean(test_accuracies),
+            "test/combined_loss": np.mean(test_losses)
+        })
+    torch.save(model.state_dict(), f"{wandb.config.output_dir}/model_{wandb.config.mode}.pt")
+    wandb.finish()
 
 
         
@@ -189,21 +223,22 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility (default: 0).')
     parser.add_argument('--batch_size', type=int, default = 64, help='Batch size for training.')
     parser.add_argument('--lr', type=float, default = 1e-2, help='Learning rate for training.')
-    parser.add_argument('--output_dir', type=str, default = "experiments/data", help='Directory to save output results.')
+    parser.add_argument('--output_dir', type=str, default = "experiments/data/model_files/", help='Directory to save output results.')
     parser.add_argument('--save_frequency', type=int, default = 25, help='Frequency to save model checkpoints.')
     parser.add_argument('--data_dir', type=str, default = "experiments/data", help='Directory to find training data')
     parser.add_argument('--accuracy_threshold', type=int, default = 50, help='Reward threshold to stop training.')
     parser.add_argument('--_lambda', type=float, default = 0.5, help='balance the loss between cross entropy and cosine distance loss')
-    parser.add_argument('--max_epochs', type=int, default = 100, help='Maximum number of epochs to train for.')
+    parser.add_argument('--max_epochs', type=int, default = 5, help='Maximum number of epochs to train for.')
     parser.add_argument('--visualize_freq', type=int, default = 5, help='Frequency to visualize the heatmaps')
     parser.add_argument('--tags', nargs='+', default = ["experiment", "mnist_test", "hybrid loss"], help='Tags for wandb runs')
+    parser.add_argument('--mode', type=str, default = 'ground_truth_label', help='Mode for training the model')
 
     # Parse the arguments
     args = parser.parse_args()
     
-    wandb.init(project="hybrid_loss_mnist", tags=["hybrid_loss", "mnist", "supervised_learning", *args.tags], mode="disabled")
+    wandb.init(project="MNIST_LRP", tags=["hybrid_loss", "mnist", "supervised_learning", *args.tags])
     wandb.config.update(args)
-    wandb.config.update({"experiment_class": "pure_loss_mnist"})
+    wandb.config.update({"experiment_class": "MNIST comparison"})
     # define device for GPU compatibility
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -232,5 +267,6 @@ if __name__ == "__main__":
     # main(model, optimizer, criterion, train_loader, test_loader, device, apply_threshold)
     model = WrapperNet(SimpleNet(), hybrid_loss=True)
     optimizer = optim.Adam(model.parameters(), lr=1e-3, eps=1e-8)
-    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=0.1)
-    train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, wandb.config.max_epochs)
+    criterion = HybridCosineDistanceCrossEntopyLoss(_lambda=wandb.config._lambda)
+    train_simple_model(model, optimizer, criterion, train_loader, test_loader, device, wandb.config.max_epochs, mode = wandb.config.mode)
+    
