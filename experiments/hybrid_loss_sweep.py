@@ -16,12 +16,12 @@ if __name__ == '__main__':
             "mode": {"values": ["ascending", "descending", None]},
             "step_size": {"max": 1e-5, "min": 1e-7},
             "top_percent": {"max": 0.9, "min": 0.1},
-            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label"]}
+            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label", "default"]}
         }
     }
 
     # Create the sweep
-    sweep_id = wandb.sweep(sweep=hyperparam_dict, project="reverse_LRP_mnist")
+    sweep_id = wandb.sweep(sweep=hyperparam_dict, project="LRP-CIFAR10")
     # Run the sweep agent with the wrapper function
     # sweep_id = "charles-higgins/reverse_LRP_mnist/q6bk7fd4"
     wandb.agent(sweep_id, function=main, count=20)

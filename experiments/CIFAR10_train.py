@@ -28,9 +28,9 @@ global args, best_prec1
 
 
 def main():
-    # wandb.init(project = "reverse_LRP_mnist",
-    #     sync_tensorboard=True
-    #     )
+    wandb.init(project = "CIFAR10_LRP_mnist",
+        sync_tensorboard=True
+        )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -45,9 +45,11 @@ def main():
         os.makedirs(wandb.config.save_dir)
     # load the teacher model
     teacher_model = WrapperNet(get_teacher_model(wandb.config.teacher_checkpoint_path), hybrid_loss=True)
-    learner_model = vgg.__dict__[wandb.config.arch]()
-    learner_model.features = torch.nn.DataParallel(learner_model.features)
-    learner_model = WrapperNet(learner_model, hybrid_loss=True)
+    teacher_model.model.features = torch.nn.DataParallel(teacher_model.model.features)
+    # teacher_model = torch.compile(teacher_model)
+    learner_model = WrapperNet(vgg.__dict__[wandb.config.arch](), hybrid_loss=True)
+    learner_model.model.features = torch.nn.DataParallel(learner_model.model.features)
+    # learner_model = torch.compile(learner_model)
     if wandb.config.cpu:
         learner_model.cpu()
         teacher_model.cpu
@@ -133,14 +135,14 @@ def main():
             'epoch': epoch,
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
-    }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
+    }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}_{wandb.config.teacher_heatmap_mode}.tar'))
     wandb.finish()
     
 def train_only_on_positive(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
     """
         Run one train epoch
     """
-    assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
+    # assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -169,15 +171,19 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
         ######################################################
         with torch.no_grad():
             classifictions = nn.functional.log_softmax(learner_model.model(input), dim=1)
-            classifications = classifictions.argmax(dim=1)
-            # Find the indices where classifications and labels agree
-            matching_indices = (classifications == target).nonzero(as_tuple=True)[0]
-            pruned_inputs = input[matching_indices]
-            pruned_targets = target[matching_indices]
-            if pruned_targets.shape[0]>0:
-                _, target_maps = teacher_model(pruned_inputs)
-        # now track gradients for forward pass  
+        classifications = classifictions.argmax(dim=1)
+        # Find the indices where classifications and labels agree
+        matching_indices = (classifications == target).nonzero(as_tuple=True)[0]
+        pruned_inputs = input[matching_indices]
+        pruned_targets = target[matching_indices]
         if pruned_targets.shape[0]>0:
+            if len(pruned_inputs.shape) == 3:
+                # if only a single value has been selected...
+                # we need to unsqueeze the value to increase the size
+                pruned_inputs = pruned_inputs.unsqueeze(0)
+                pruned_targets = pruned_targets.unsqueeze(0)
+            _, target_maps = teacher_model(pruned_inputs)
+            # now track gradients for forward pass  
             pruned_output, pruned_heatmaps = learner_model(pruned_inputs)
             target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
@@ -198,7 +204,7 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
         torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
-
+        # compute measurements
         output = full_output.float()
         loss = loss.float()
         cosine_loss = cosine_loss.float()
@@ -251,7 +257,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
     """
         Run one train epoch
     """
-    assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
+    # assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -565,7 +571,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='ground_truth_target')
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='default')
     
     args = parser.parse_args()
     # enter the main loop]
