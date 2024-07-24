@@ -15,7 +15,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import baselines.trainVggBaselineForCIFAR10.vgg as vgg
 import wandb
-from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, log_memory_usage, free_memory
+from internal_utils import filter_top_percent_pixels_over_channels, update_dictionary_patch, update_dictionary_patch_2, log_memory_usage, free_memory
 from experiments import HybridCosineDistanceCrossEntopyLoss, WrapperNet
 
 
@@ -28,9 +28,9 @@ global args, best_prec1
 
 
 def main():
-    # wandb.init(project = "reverse_LRP_mnist",
-    #     sync_tensorboard=True
-    #     )
+    wandb.init(project = "CIFAR10_LRP_mnist",
+        sync_tensorboard=True
+        )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -45,9 +45,11 @@ def main():
         os.makedirs(wandb.config.save_dir)
     # load the teacher model
     teacher_model = WrapperNet(get_teacher_model(wandb.config.teacher_checkpoint_path), hybrid_loss=True)
-    learner_model = vgg.__dict__[wandb.config.arch]()
-    learner_model.features = torch.nn.DataParallel(learner_model.features)
-    learner_model = WrapperNet(learner_model, hybrid_loss=True)
+    teacher_model.model.features = torch.nn.DataParallel(teacher_model.model.features)
+    # teacher_model = torch.compile(teacher_model)
+    learner_model = WrapperNet(vgg.__dict__[wandb.config.arch](), hybrid_loss=True)
+    learner_model.model.features = torch.nn.DataParallel(learner_model.model.features)
+    # learner_model = torch.compile(learner_model)
     if wandb.config.cpu:
         learner_model.cpu()
         teacher_model.cpu
@@ -90,7 +92,7 @@ def main():
         learner_model.half()
         criterion.half()
 
-    optimizer = torch.optim.SGD(learner_model.parameters(), wandb.config.lr,
+    optimizer = torch.optim.SGD(learner_model.model.parameters(), wandb.config.lr,
                                 momentum=wandb.config.momentum,
                                 weight_decay=wandb.config.weight_decay)
 
@@ -133,14 +135,14 @@ def main():
             'epoch': epoch,
             'state_dict': learner_model.state_dict(),
             'best_prec1': best_prec1,
-    }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}.tar'))
+    }, is_best, filename=os.path.join(wandb.config.save_dir, f'checkpoint_{epoch}_{date_time}_{wandb.config.teacher_heatmap_mode}.tar'))
     wandb.finish()
     
 def train_only_on_positive(train_loader, learner_model, teacher_model, criterion, optimizer, epoch):
     """
         Run one train epoch
     """
-    assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
+    # assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -169,23 +171,27 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
         ######################################################
         with torch.no_grad():
             classifictions = nn.functional.log_softmax(learner_model.model(input), dim=1)
-            classifications = classifictions.argmax(dim=1)
-            # Find the indices where classifications and labels agree
-            matching_indices = (classifications == target).nonzero(as_tuple=True)[0]
-            pruned_inputs = input[matching_indices]
-            pruned_targets = target[matching_indices]
-            if pruned_targets.shape[0]>0:
-                _, target_maps = teacher_model(pruned_inputs)
-        # now track gradients for forward pass  
+        classifications = classifictions.argmax(dim=1)
+        # Find the indices where classifications and labels agree
+        matching_indices = (classifications == target).nonzero(as_tuple=True)[0]
+        pruned_inputs = input[matching_indices]
+        pruned_targets = target[matching_indices]
         if pruned_targets.shape[0]>0:
+            if len(pruned_inputs.shape) == 3:
+                # if only a single value has been selected...
+                # we need to unsqueeze the value to increase the size
+                pruned_inputs = pruned_inputs.unsqueeze(0)
+                pruned_targets = pruned_targets.unsqueeze(0)
+            _, target_maps = teacher_model(pruned_inputs)
+            # now track gradients for forward pass  
             pruned_output, pruned_heatmaps = learner_model(pruned_inputs)
             target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
             # compute gradient and do SGD step
             optimizer.zero_grad()
-            cross_entropy_loss.backward()
-            torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
-            # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            loss.backward()
+            # torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
+            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
             optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
@@ -198,7 +204,7 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
         torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
-
+        # compute measurements
         output = full_output.float()
         loss = loss.float()
         cosine_loss = cosine_loss.float()
@@ -251,7 +257,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
     """
         Run one train epoch
     """
-    assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
+    # assert isinstance(learner_model, WrapperNet) and isinstance(teacher_model, WrapperNet), "Models must be wrapped in WrapperNet class"
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -281,28 +287,34 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             # we calculate the heatmap based on the selected class by the learner model, and show what the teacher model
             # would likely see as the heatmap for that class.
             if wandb.config.teacher_heatmap_mode == 'learner_label':
-                output, heatmaps = learner_model(input)
+                with torch.no_grad():
+                    output, heatmaps = learner_model(input)
                 _, target_maps = teacher_model(input, output.detach().argmax(dim=1))
-            elif wandb.config.teacher_heatmap_mode == 'default':
+            elif wandb.config.teacher_heatmap_mode == 'default' or wandb.config.teacher_heatmap_mode == 'sanity_check':
                 _, target_maps = teacher_model(input)
+            elif wandb.config.teacher_heatmap_mode == 'sanity_check':
+                pass
             else:
                 raise ValueError("Incorrect value for teacher_heatmap_mode")
         target_maps = filter_top_percent_pixels_over_channels(target_maps.detach(), wandb.config.top_percent)
         # now compute forward pass with grad
         if wandb.config.teacher_heatmap_mode == 'learner_label':
             output, heatmaps = learner_model(input, target)
-        elif wandb.config.teacher_heatmap_mode == 'default':
+        elif wandb.config.teacher_heatmap_mode == 'default' or wandb.config.teacher_heatmap_mode == 'sanity_check':
             output, heatmaps = learner_model(input)
         else:
             raise ValueError("Incorrect code executed here --- something done gone fucked up")
         loss, cosine_loss, cross_entropy_loss = criterion(heatmaps, target_maps, output, target)
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=0.5)  # Clip gradients
+        if wandb.config.teacher_heatmap_mode == 'sanity_check':
+            cross_entropy_loss.backward()
+        else:
+            loss.backward()
+        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
-
+        # store losses
         output = output.float()
         loss = loss.float()
         cosine_loss = cosine_loss.float()
@@ -482,8 +494,16 @@ def get_teacher_model(teacher_checkpoint_path):
     checkpoint = torch.load(teacher_checkpoint_path)
     # assume teacher model is vgg11 for now
     teacher = vgg.vgg11()
-    checkpoint = update_dictionary_patch(checkpoint)
-    teacher.load_state_dict(checkpoint['new_state_dict'])
+    try: 
+        checkpoint = update_dictionary_patch(checkpoint)
+        teacher.load_state_dict(checkpoint['new_state_dict'])
+    except:
+        print('Incorrect patch specified')
+    try:
+        checkpoint = update_dictionary_patch_2(checkpoint)
+        teacher.load_state_dict
+    except:
+        print("fuck. Didn't work either. Shit.")
     return teacher
 
 def update_config_for_sweeps():
@@ -519,7 +539,7 @@ if __name__ == '__main__':
                         choices=model_names,
                         help='model architecture: ' + ' | '.join(model_names) +
                         ' (default: vgg19)')
-    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=300, type=int, metavar='N',
                         help='number of total epochs to run')
@@ -557,7 +577,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are learner_label, ground_truth_target and default', default='ground_truth_target')
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are sanity_check, learner_label, ground_truth_target and default', default='sanity_check')
     
     args = parser.parse_args()
     # enter the main loop]
