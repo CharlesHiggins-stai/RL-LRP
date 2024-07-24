@@ -20,3 +20,16 @@ def update_dictionary_patch(checkpoint):
         new_state_dict[new_key]= value
     checkpoint['new_state_dict'] = new_state_dict
     return checkpoint
+
+
+def update_dictionary_patch_2(checkpoint):
+    new_state_dict = OrderedDict()
+    for key, value in checkpoint['state_dict'].items():
+        if "_orig_mod." in key:
+            new_key = key.replace("_orig_mod.", "")
+            new_state_dict[new_key] = value
+    checkpoint["new_state_dict"] = new_state_dict
+    return checkpoint
+
+
+        
