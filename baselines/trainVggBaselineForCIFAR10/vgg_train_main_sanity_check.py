@@ -2,7 +2,6 @@ import argparse
 import os
 import shutil
 import time
-
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -13,6 +12,10 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import vgg
 import wandb
+import sys
+sys.path.append("/home/charleshiggins/RL-LRP")
+from experiments import WrapperNet
+
 
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
@@ -63,8 +66,9 @@ def main():
     global args, best_prec1
     args = parser.parse_args()
 
-    wandb.init(project = "CIFAR10_LRP_mnist",
-        sync_tensorboard=True
+    wandb.init(project = "reverse_LRP_mnist",
+        sync_tensorboard=True,
+        mode = "disabled"
         )
     wandb.config.update(args)
     extra_args = {
@@ -84,6 +88,7 @@ def main():
     else:
         model.cuda()
 
+    model = WrapperNet(model, hybrid_loss=True)
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
@@ -183,7 +188,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             input = input.half()
 
         # compute output
-        output = model(input)
+        output, heatmaps = model(input)
         loss = criterion(output, target)
 
         # compute gradient and do SGD step
@@ -240,7 +245,7 @@ def validate(val_loader, model, criterion, epoch):
 
         # compute output
         with torch.no_grad():
-            output = model(input)
+            output, heatmaps = model(input)
             loss = criterion(output, target)
 
         output = output.float()
