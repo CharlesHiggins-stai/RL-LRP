@@ -28,9 +28,9 @@ global args, best_prec1
 
 
 def main():
-    wandb.init(project = "CIFAR10_LRP_mnist",
-        sync_tensorboard=True
-        )
+    # wandb.init(project = "CIFAR10_LRP_mnist",
+    #     sync_tensorboard=True
+    #     )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -191,7 +191,7 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
             optimizer.zero_grad()
             loss.backward()
             # torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
-            torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+            # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
             optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
@@ -201,7 +201,7 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
         ce_loss = criterion.cross_entropy_loss(full_output, target)
         optimizer.zero_grad()
         ce_loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
+        # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
         # compute measurements
@@ -311,7 +311,7 @@ def train(train_loader, learner_model, teacher_model, criterion, optimizer, epoc
             cross_entropy_loss.backward()
         else:
             loss.backward()
-        torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1)  # Clip gradients
+        # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1)  # Clip gradients
         optimizer.step()
         update_hybrid_loss(criterion)
         # store losses
@@ -577,7 +577,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_lambda', type=float, default=0.0, help='min value for lambda')
     parser.add_argument('--teacher_checkpoint_path', type=str, help='path to teacher model checkpoint',
                         default=f"{ROOT_DIR}/baselines/trainVggBaselineForCIFAR10/save_vgg11/checkpoint_299.tar")
-    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are sanity_check, learner_label, ground_truth_target and default', default='sanity_check')
+    parser.add_argument('--teacher_heatmap_mode', type=str, help='mode for generating teacher heatmaps, options are sanity_check, learner_label, ground_truth_target and default', default='ground_truth_target')
     
     args = parser.parse_args()
     # enter the main loop]
