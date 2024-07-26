@@ -59,11 +59,10 @@ def train_simple_model(model, optimizer, criterion, train_loader, test_loader, d
         losses = []
         accuracy_list = []
         model.train()
-        for data, target in train_loader:
+        for i, (data, target) in enumerate(train_loader):
             data, target = data.to(device), target.to(device)
-            
             if mode == 'ground_truth_label':
-                target_heatmap = apply_threshold(data, threshold=0.95)
+                target_heatmap = apply_threshold(data, threshold=wandb.config.threshold)
                 with torch.no_grad():
                     output_classification = model.model(data)
                 correct_indx = (output_classification.argmax(dim=1) == target).nonzero()
@@ -85,33 +84,47 @@ def train_simple_model(model, optimizer, criterion, train_loader, test_loader, d
                 loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmap, pruned_target_heatmap, pruned_output, pruned_target)
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 # now train the model on CE loss alone
                 output, heatmap = model(data)
                 ce_loss = criterion.cross_entropy_loss(output, target)
                 optimizer.zero_grad()
                 ce_loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
             elif mode == 'learner_label':
                 output, heatmap = model(data, target)
-                target_heatmap = apply_threshold(data, threshold=0.95)
+                target_heatmap = apply_threshold(data, threshold=wandb.config.threshold)
                 loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
                 optimizer.step()
             elif mode == "default":
                 output, heatmap = model(data)
-                target_heatmap = apply_threshold(data, threshold=0.95)
+                target_heatmap = apply_threshold(data, threshold=wandb.config.threshold)
                 loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                optimizer.step()
+            elif mode == 'sanity_check':
+                output, _ = model(data)
+                loss = criterion.cross_entropy_loss(output, target)
+                optimizer.zero_grad()
+                loss.backward()
+                # torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                optimizer.step()
+            elif mode == 'pure':
+                output, heatmap = model(data, target)
+                target_heatmap = apply_threshold(data, threshold=wandb.config.threshold)
+                loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
+                optimizer.zero_grad()
+                cosine_loss.backward()
                 optimizer.step()
             else:
-                raise ValueError("mode must be one of ['ground_truth_label', 'learner_label', 'default']")
+                raise ValueError("mode must be one of ['ground_truth_label', 'learner_label', 'default', 'sanity_check', 'pure']")
             # loss, cosine_loss, cross_entropy_loss = criterion(heatmap, target_heatmap, output, target)
             # optimizer.zero_grad()
             # cosine_loss.backward()
@@ -174,45 +187,45 @@ def test_model(model, criterion, test_loader, device, attention_function):
     wandb.log({"accuracy": accuracy})
     return model, test_loss, accuracy    
 
-def plot_heatmap_comparison(model, test_loader, device, attention_function, epoch):
-    data, target = next(iter(test_loader))
-    target_map = attention_function(data, threshold=0.95)
-    output_classification, output = model(data.to(device), target.to(device))
-    num = np.random.randint(0, len(target))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    axes[0].imshow(output[num][0].detach().numpy(), cmap='hot')
-    axes[0].set_title(f'LRP Output after {epoch} iterations')
-    axes[1].imshow(target_map[num][0], cmap='hot')
-    axes[1].set_title('Target Heatmap (Ground Truth)')
-    axes[2].imshow(data[num][0].detach().numpy(), cmap='gray')
-    axes[2].set_title('Input Image (Original)')
+# def plot_heatmap_comparison(model, test_loader, device, attention_function, epoch):
+#     data, target = next(iter(test_loader))
+#     target_map = attention_function(data, threshold=0.95)
+#     output_classification, output = model(data.to(device), target.to(device))
+#     num = np.random.randint(0, len(target))
+#     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+#     axes[0].imshow(output[num][0].detach().numpy(), cmap='hot')
+#     axes[0].set_title(f'LRP Output after {epoch} iterations')
+#     axes[1].imshow(target_map[num][0], cmap='hot')
+#     axes[1].set_title('Target Heatmap (Ground Truth)')
+#     axes[2].imshow(data[num][0].detach().numpy(), cmap='gray')
+#     axes[2].set_title('Input Image (Original)')
     
-    # Save the figure to a BytesIO buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img = Image.open(buf)
-    wandb.log({"Example Image": wandb.Image(img)})
-    # plt.show()
+#     # Save the figure to a BytesIO buffer
+#     buf = io.BytesIO()
+#     plt.savefig(buf, format='png')
+#     buf.seek(0)
+#     img = Image.open(buf)
+#     wandb.log({"Example Image": wandb.Image(img)})
+#     # plt.show()
     
 def checkpoint_model(model, output_dir, epoch:int):
     torch.save(model.state_dict(), f"{output_dir}/model_{epoch}.pt")
     
-def main(model, optimizer, criterion, train_loader, test_loader, device, apply_threshold):
-    max_epochs = wandb.config.max_epochs
-    visualise_frequency = wandb.config.visualize_freq
-    for x in range(max_epochs):
-        # if x % visualise_frequency== 0:
-        #     plot_heatmap_comparison(model, test_loader, device, apply_threshold, x)
-        # if x % wandb.config.save_frequency == 0:
-        #     checkpoint_model(model, wandb.config.output_dir, x)
-        print(f'Epoch: {x}')
-        model, train_loss = train_model(model, optimizer, criterion, train_loader, device, apply_threshold)
-        model, test_classification_loss, accuracy = test_model(model, criterion, test_loader, device, apply_threshold)
-        # print(f'Epoch: {x}, Test Classification Loss: {test_classification_loss}, Accuracy: {accuracy}')
-        print(f'Epoch: {x}, Training Loss: {train_loss}')
-    checkpoint_model(model, wandb.config.output_dir, max_epochs)
-    print('completed training.')
+# def main(model, optimizer, criterion, train_loader, test_loader, device, apply_threshold):
+#     max_epochs = wandb.config.max_epochs
+#     visualise_frequency = wandb.config.visualize_freq
+#     for x in range(max_epochs):
+#         # if x % visualise_frequency== 0:
+#         #     plot_heatmap_comparison(model, test_loader, device, apply_threshold, x)
+#         # if x % wandb.config.save_frequency == 0:
+#         #     checkpoint_model(model, wandb.config.output_dir, x)
+#         print(f'Epoch: {x}')
+#         model, train_loss = train_model(model, optimizer, criterion, train_loader, device, apply_threshold)
+#         model, test_classification_loss, accuracy = test_model(model, criterion, test_loader, device, apply_threshold)
+#         # print(f'Epoch: {x}, Test Classification Loss: {test_classification_loss}, Accuracy: {accuracy}')
+#         print(f'Epoch: {x}, Training Loss: {train_loss}')
+#     checkpoint_model(model, wandb.config.output_dir, max_epochs)
+#     print('completed training.')
     
     
 if __name__ == "__main__":
@@ -229,14 +242,15 @@ if __name__ == "__main__":
     parser.add_argument('--accuracy_threshold', type=int, default = 50, help='Reward threshold to stop training.')
     parser.add_argument('--_lambda', type=float, default = 0.5, help='balance the loss between cross entropy and cosine distance loss')
     parser.add_argument('--max_epochs', type=int, default = 5, help='Maximum number of epochs to train for.')
+    parser.add_argument('--threshold', type=float, default=0.975, help='threshold to select top pcnt of pixels (1- value) 0.1 is equal to top 90%')
     parser.add_argument('--visualize_freq', type=int, default = 5, help='Frequency to visualize the heatmaps')
     parser.add_argument('--tags', nargs='+', default = ["experiment", "mnist_test", "hybrid loss"], help='Tags for wandb runs')
-    parser.add_argument('--mode', type=str, default = 'ground_truth_label', help='Mode for training the model')
+    parser.add_argument('--mode', type=str, default = 'pure', help='Mode for training the model')
 
     # Parse the arguments
-    args = parser.parse_args()
+    args = parser.parse_args() 
     
-    wandb.init(project="MNIST_LRP", tags=["hybrid_loss", "mnist", "supervised_learning", *args.tags])
+    wandb.init(project="MNIST_LRP", tags=["hybrid_loss", "mnist", "supervised_learning", *args.tags], mode='disabled')
     wandb.config.update(args)
     wandb.config.update({"experiment_class": "MNIST comparison"})
     # define device for GPU compatibility

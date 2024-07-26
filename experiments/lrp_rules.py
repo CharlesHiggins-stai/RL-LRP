@@ -186,6 +186,8 @@ def lrp_conv2d_alpha_beta(layer, activation, R, alpha=1, beta=0, eps=1e-2):
     
     if torch.isnan(R_new).any():
         print('Nan crept in here --- time to debug this mother fucker')
+        nan_mask = torch.isnan(R_new)
+        R_new = R_new.masked_fill(nan_mask, 0.0)
     # Normalize the relevance scores if necessar
     # R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
     # R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
@@ -248,16 +250,22 @@ def reverse_max_pool2d(relevance, indices, input_shape, kernel_size, stride=None
     
     return reversed_input
 
-def reverse_adaptive_avg_pool2d(relevance, input_activation, eta = 1e-9):
+def reverse_adaptive_avg_pool2d(relevance, input_activation, eta = 1e-2):
     """
     Make sure to use a differentiable interpolation method if gradients need to pass through this function.
     """
     output_shape = relevance.shape
-    # Calculate stride and kernel size
-    stride_height = input_activation.shape[2] // output_shape[2]
-    stride_width = input_activation.shape[3] // output_shape[3]
-    kernel_height = input_activation.shape[2] - (output_shape[2] - 1) * stride_height
-    kernel_width = input_activation.shape[3] - (output_shape[3] - 1) * stride_width
+    input_height, input_width = input_activation.shape[2], input_activation.shape[3]
+    output_height, output_width = output_shape[2], output_shape[3]
+
+    # Calculate stride and kernel size, ensuring they are at least 1
+    stride_height = max(input_height // output_height, 1)
+    stride_width = max(input_width // output_width, 1)
+
+    # Calculate kernel size ensuring they are positive
+    kernel_height = max(input_height - (output_height - 1) * stride_height, 1)
+    kernel_width = max(input_width - (output_width - 1) * stride_width, 1)
+
     
     # Differentiable interpolation
     upsampled_relevance = F.interpolate(relevance, size=(input_activation.shape[2], input_activation.shape[3]), mode='bilinear', align_corners=True)
@@ -309,5 +317,11 @@ def reverse_batch_norm2d(layer, activation, relevance, eps=1e-2):
 
 def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
-    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps
-    return torch.div(numerator, safe_denom)
+    assert not numerator.isnan().any() and not denominator.isnan().any(), "Cannot perform division on nan values"
+    safe_denom = denominator + (eps * torch.sign(denominator).detach()) + 0.0001
+    if safe_denom.isnan().any() and safe_denom.isinf().any() and numerator.isnan().any() and numerator.isinf().any():
+        print('fuck')
+    out =  torch.div(numerator, safe_denom)
+    if out.isnan().any():
+        print('fuck')
+    return out

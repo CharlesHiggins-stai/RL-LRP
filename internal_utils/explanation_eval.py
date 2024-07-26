@@ -11,6 +11,8 @@ import torch
 import sys
 from experiments import WrapperNet
 from captum.attr import GuidedGradCam
+from .reload_model import update_dictionary_patch, update_dictionary_patch_2, update_dictionary_patch_3
+from baselines.trainVggBaselineForCIFAR10 import vgg 
 
 def transform_batch_of_images(images):
     """Apply standard transformation to the batch of images."""
@@ -103,6 +105,8 @@ def compute_distance_between_images(images1, images2):
     # condense images to heatmap
     images1 = condense_to_heatmap(images1)
     images2 = condense_to_heatmap(images2)
+    assert not images1.isnan().any(), "images1 contains NaN values"
+    assert not images2.isnan().any(), "images2 contains NaN values"
     # Flatten the images to compute cosine similarity
     images1_flat = images1.view(images1.size(0), -1)
     images2_flat = images2.view(images2.size(0), -1)
@@ -134,14 +138,18 @@ def condense_to_heatmap(images):
     # Normalize each image in the batch independently
     total_sum_per_image = torch.sum(images, dim=(1, 2, 3), keepdim=True)
     normalized_tensor = images / total_sum_per_image
-    print(f"normalized_tensor shape: {normalized_tensor.shape}")
-    print(f"normalized_tensor sum: {torch.sum(normalized_tensor)}")
+    if normalized_tensor.isnan().sum() > 0:
+        nan_mask = torch.isnan(normalized_tensor)
+        normalized_tensor = normalized_tensor.masked_fill(nan_mask, 0.0)
+    assert normalized_tensor.isnan().sum() == 0, "normalized_tensor contains NaN values"
+    # print(f"normalized_tensor shape: {normalized_tensor.shape}")
+    # print(f"normalized_tensor sum: {torch.sum(normalized_tensor, dim=(1, 2, 3))}")
     # Create heatmap by taking the maximum value across the channel dimension
     heatmaps = torch.max(normalized_tensor, dim=1).values
 
     return heatmaps
 
-def compute_sparseness_of_heatmap(input_images):
+def compute_sparseness_of_heatmap(input_images, eps = 1e-6):
     """Compute the sparseness of the heatmap.
 
     Args:
@@ -164,7 +172,7 @@ def compute_sparseness_of_heatmap(input_images):
         n = len(values)
         cumvals = torch.cumsum(sorted_values, dim=0)
         sum_values = cumvals[-1]
-        gini_index = (2 * torch.arange(1, n+1).to(heatmaps.device) * sorted_values).sum() / (n * sum_values) - (n + 1) / n
+        gini_index = (2 * torch.arange(1, n+1).to(heatmaps.device) * sorted_values).sum() / ((n * sum_values) - (n + 1) + eps) / (n + eps)
         gini_indices[i] = 1 - gini_index
 
     return sparseness, gini_indices
@@ -191,16 +199,35 @@ def preprocess_images(image_batch):
     
     
     
-def get_learner_model():
+def get_learner_model(checkpoint_path = 
+                      "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP/data/trained_CIFAR_models/checkpoint_299_2024-07-22_08-41-26.tar"
+                      ):
     """Get the learner model."""
-    pass
+    # Load the model
+    arch = "vgg11"
+    empty_model = vgg.__dict__[arch]()
+    # Load the model weights to the checkpoint
+    # now cascade down various update patches to load model
+    try:
+        if not torch.cuda.is_available():
+            checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        else:
+            checkpoint = torch.load(checkpoint_path)
+        checkpoint = update_dictionary_patch(checkpoint)
+        empty_model.load_state_dict(checkpoint['state_dict'])
+        
+        return empty_model
+    except Exception as e:
+        print(f"Something went wrong in loading the model: {e}")
+        raise ValueError("Unable to load the model")
+
+    
 
 def get_teacher_model():
     """ Load and return a pretrained VGG16 model from TorchVision"""
     # Load the pretrained VGG16 model
     model = torchvision.models.vgg16(weights=torchvision.models.VGG16_Weights.IMAGENET1K_V1)
     # model = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1)
-    
     # Freeze all parameters
     for param in model.parameters():
         param.requires_grad = False
