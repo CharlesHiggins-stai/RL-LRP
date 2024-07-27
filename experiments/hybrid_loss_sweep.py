@@ -11,12 +11,12 @@ if __name__ == '__main__':
         "metric": {"goal": "maximize", "name": "test/best_prec1"},
         "parameters": {
             "lr": {"max": 1e-2, "min": 1e-5},
-            "batch_size": {"values": [32, 64]},
+            "batch_size": {"values": [32, 64, 128]},
             "_lambda": {"max": 0.5, "min": 0.001},
             "mode": {"values": ["ascending", "descending", None]},
             "step_size": {"max": 1e-5, "min": 1e-7},
             "top_percent": {"max": 0.9, "min": 0.1},
-            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label", "default", 'sanity_check']}
+            "teacher_heatmap_mode": {"values": ["ground_truth_target", "learner_label", "default"]}
         }
     }
 

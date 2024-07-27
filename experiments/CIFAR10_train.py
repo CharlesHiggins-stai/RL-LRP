@@ -28,9 +28,9 @@ global args, best_prec1
 
 
 def main():
-    # wandb.init(project = "CIFAR10_LRP_mnist",
-    #     sync_tensorboard=True
-    #     )
+    wandb.init(project = "CIFAR10_LRP_mnist",
+        sync_tensorboard=True
+        )
     extra_args = {
         'Experiment Class': 'VGG11 Hybrid Loss'
     }   
@@ -189,10 +189,15 @@ def train_only_on_positive(train_loader, learner_model, teacher_model, criterion
             loss, cosine_loss, cross_entropy_loss = criterion(pruned_heatmaps, target_maps, pruned_output, pruned_targets)
             # compute gradient and do SGD step
             optimizer.zero_grad()
-            loss.backward()
+            if not torch.isnan(loss).any():
+                loss.backward()
+            else:
+                wandb.log({
+                    'train/error': "Nan or Inf encountered in loss"
+                })
             # torch.nn.utils.clip_grad_value_(learner_model.parameters(), clip_value=1.0)
             # torch.nn.utils.clip_grad_norm_(learner_model.parameters(), max_norm=1.0)  # Clip gradients
-            optimizer.step()
+                optimizer.step()
         ######################################################
         ##### COPMUTE THE REGULAR LOSS ON ALL SAMPLES ########
         ######################################################
