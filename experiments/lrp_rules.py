@@ -319,9 +319,7 @@ def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
     assert not numerator.isnan().any() and not denominator.isnan().any(), "Cannot perform division on nan values"
     safe_denom = denominator + (eps * torch.sign(denominator).detach()) + 0.0001
-    if safe_denom.isnan().any() and safe_denom.isinf().any() and numerator.isnan().any() and numerator.isinf().any():
-        print('fuck')
     out =  torch.div(numerator, safe_denom)
     if out.isnan().any():
-        print('fuck')
+        print('fuck: nans found in safe divide output --- need to revisit this')
     return out
