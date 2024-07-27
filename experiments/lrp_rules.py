@@ -309,5 +309,5 @@ def reverse_batch_norm2d(layer, activation, relevance, eps=1e-2):
 
 def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
-    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps
+    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps * 0.1
     return torch.div(numerator, safe_denom)
