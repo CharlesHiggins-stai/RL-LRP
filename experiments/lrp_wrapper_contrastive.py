@@ -51,9 +51,9 @@ def track_activations(wrapper):
 
 
 # Wrapper class to track layers and activations
-class WrapperNet(nn.Module):
+class WrapperNetContrastive(nn.Module):
     def __init__(self, model:nn.Module, hybrid_loss:bool = False):
-        super(WrapperNet, self).__init__()
+        super(WrapperNetContrastive, self).__init__()
         self.model = model
         self.hybrid_loss = hybrid_loss
         self.executed_layers = []
@@ -72,7 +72,7 @@ class WrapperNet(nn.Module):
         ######################################################################## 
         for name, module in self.model.named_modules():
             if not isinstance(module, nn.Sequential) \
-            and not isinstance(module, WrapperNet) \
+            and not isinstance(module, WrapperNetContrastive) \
             and not len(list(module.children())) > 0 \
                 and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
                 self.handles.append(module.register_forward_hook(self.forward_hook))
@@ -97,38 +97,47 @@ class WrapperNet(nn.Module):
         with track_activations(self):
             y =  self.model(x)
         if target_class != None:
-            relevance = y.gather(1, target_class.unsqueeze(1))
-            # mask = torch.zeros_like(y)
-            # mask.scatter_(1, target_class.unsqueeze(1), 1)
-            # relevance = y * mask
+            # relevance = y.gather(1, target_class.unsqueeze(1))
+            mask = torch.zeros_like(y)
+            mask.scatter_(1, target_class.unsqueeze(1), 1)
+            relevance = y * mask
+            # calculate the inverse relevance now
+            # the relevance of all other items..
+            mask_prime = torch.ones_like(y)
+            mask_prime.scatter_(1, target_class.unsqueeze(1), 0)
+            relevance_prime = y * mask_prime
         else:
-            # relevance = F.log_softmax(y) 
-            relevance = diff_softmax(y)
+            relevance = F.log_softmax(y, dim=1)
+            mask_prime = torch.ones_like(y)
+            mask_prime.scatter_(1, y.argmax(dim=1).unsqueeze(1), 0)
+            relevance_prime = y * mask_prime
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
             # print('index:', index, '\tlayer:', layer[0])
             if index != 0 and relevance.shape != layer[2].shape:
             # if there is a reshaping/view operation, we need to reshape the relevance tensor
             # in the backwards pass to match the shape of the input tensor
                     relevance = relevance.view(layer[2].shape)
+                    relevance_prime = relevance_prime.view(layer[2].shape)
             if isinstance(layer[0], tuple):
             # If layer is layer or simply activation function, we need to treat differently 
                 relevance = reverse_layer(layer[1][0], layer[0][1], relevance)
+                relevance_prime = reverse_layer(layer[1][0], layer[0][1], relevance_prime)
                 # print(f'index: {index} layer:', layer[0][1])
             else:
                 relevance = reverse_layer(layer[1], None, relevance, layer_type=layer[0], extra=layer[3])
+                relevance_prime = reverse_layer(layer[1], None, relevance_prime, layer_type=layer[0], extra=layer[3])
                 # print(f'index: {index} layer:', layer[0])
-            # print('total relevance: ', relevance.flatten().sum().item())
-            # print('relevance mean value:', relevance.flatten().mean().item())
-            # print('relevance shape:', relevance.shape)
-            if torch.isnan(relevance).any():
+            if torch.isnan(relevance).any() or torch.isnan(relevance_prime).any():
                 print("Nan found here --- need to work out where this occured")
                 nan_mask = torch.isnan(relevance)
                 relevance = relevance.masked_fill(nan_mask, 0.0)
+                nan_mask_prime = torch.isnan(relevance_prime)
+                relevance_prime = relevance_prime.masked_fill(nan_mask_prime, 0.0)
         if self.hybrid_loss == True:
             # return torch.nn.functional.log_softmax(y, dim=1), relevance
-            return y, relevance
+            return y, relevance - relevance_prime
         else:
-            return relevance
+            return relevance - relevance_prime
 
     def get_layers_and_activation_lists(self):
         return self.executed_layers, self. activation_inputs, self.activation_outputs
@@ -143,7 +152,7 @@ class WrapperNet(nn.Module):
         # reapply hooks after we have removed them --- make sure we still capture the layers output and activations
         for name, module in self.model.named_modules():
             if not isinstance(module, nn.Sequential) \
-            and not isinstance(module, WrapperNet) \
+            and not isinstance(module, WrapperNetContrastive) \
             and not len(list(module.children())) > 0 \
                 and type(module) not in [nn.ReLU, nn.MaxPool2d, nn.AdaptiveAvgPool2d, nn.LogSoftmax, nn.Dropout]:
                 self.handles.append(module.register_forward_hook(self.forward_hook))

@@ -3,7 +3,7 @@ import torchvision.transforms as transforms
 from torchvision.transforms import Normalize
 from torchvision import datasets
 import sys
-ROOT_DIR = "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP"
+ROOT_DIR = "/home/charleshiggins/RL-LRP"
 def get_CIFAR10_dataloader(train:bool = True):
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
