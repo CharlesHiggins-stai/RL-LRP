@@ -97,10 +97,10 @@ class WrapperNet(nn.Module):
         with track_activations(self):
             y =  self.model(x)
         if target_class != None:
-            relevance = y.gather(1, target_class.unsqueeze(1))
-            # mask = torch.zeros_like(y)
-            # mask.scatter_(1, target_class.unsqueeze(1), 1)
-            # relevance = y * mask
+            # relevance = y.gather(1, target_class.unsqueeze(1))
+            mask = torch.zeros_like(y)
+            mask.scatter_(1, target_class.unsqueeze(1), 1)
+            relevance = y * mask
         else:
             # relevance = F.log_softmax(y) 
             relevance = diff_softmax(y)
