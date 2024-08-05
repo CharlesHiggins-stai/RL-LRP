@@ -103,7 +103,8 @@ class WrapperNet(nn.Module):
             relevance = y * mask
         else:
             # relevance = F.log_softmax(y) 
-            relevance = diff_softmax(y)
+            # relevance = diff_softmax(y)
+            relevance = y
         for index, layer in enumerate(zip(reversed(self.executed_layers), reversed(self.activations_inputs), reversed(self.activation_outputs), reversed(self.info))):
             # print('index:', index, '\tlayer:', layer[0])
             if index != 0 and relevance.shape != layer[2].shape:
