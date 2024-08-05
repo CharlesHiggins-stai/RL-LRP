@@ -12,12 +12,14 @@ class CosineDistanceLoss(nn.Module):
         input2_flat = input2.view(input2.size(0), -1)
         
         # Compute cosine similarity, then convert to cosine distance
-        cosine_sim = F.cosine_similarity(input1_flat, input2_flat)
-        cosine_dist = 1 - cosine_sim
+        # cosine_sim = F.cosine_similarity(input1_flat, input2_flat)
+        # cosine_dist = 1 - cosine_sim
         
         # Calculate the mean of the cosine distances
-        loss = cosine_dist.mean()
+        # loss = cosine_dist.mean()
+        loss = F.mse_loss(input1_flat, input2_flat)
         return loss
+
 
 class HybridCosineDistanceCrossEntopyLoss(nn.Module):
     def __init__(self, _lambda=0.5, mode = None, step_size = 1e-5, max_lambda = 0.5, min_lambda = 0.0):

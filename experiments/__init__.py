@@ -5,6 +5,7 @@ from .cosine_dist_loss import CosineDistanceLoss, HybridCosineDistanceCrossEntop
 from .poc_simple_net import ManualCNN
 from .lrp_rules import reverse_layer, diff_softmax
 from .evaluation_functions import perform_lrp_plain, perform_loss_lrp, perform_lrp_captum, perform_gradcam
+from .lrp_wrapper_contrastive import WrapperNetContrastive
 __all__ = ["WrapperNet", 
            "SimpleNet", 
            "SimpleRNet", 
@@ -18,5 +19,6 @@ __all__ = ["WrapperNet",
            "perform_lrp_plain",
            "perform_loss_lrp",
            "perform_lrp_captum",
-            "perform_gradcam"
+            "perform_gradcam",
+            'WrapperNetContrastive'
            ]

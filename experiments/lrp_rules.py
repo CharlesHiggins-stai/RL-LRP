@@ -39,7 +39,8 @@ def lrp_linear(layer, activation, R, eps=1e-2):
     W = layer.weight
     # Z = W @ activation.t() + layer.bias[:, None] + eps
     Z = layer.forward(activation)
-    S = R / (Z + eps)
+    S =  safe_divide(R, Z, eps)
+    # S = R / (Z + eps)
     C = W.t() @ S.t()
     R_new = activation * C.t()
     return R_new
@@ -118,12 +119,13 @@ def lrp_conv2d(layer, activation, R, eps=1e-2):
     W = layer.weight
     X = activation
     Z = F.conv2d(X, W, bias=layer.bias, stride=layer.stride, padding=layer.padding) 
-    S = R / (Z + eps)
+    S = safe_divide(R, Z, eps)
+    # S = R / (Z + eps)
     C = F.conv_transpose2d(S, W, stride=layer.stride, padding=layer.padding)
     R_new = X * C
-    R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
-    R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
-    R_new = R_new * (R_sum / (R_new_sum + eps))
+    # R_new_sum = R_new.sum(dim=[1, 2, 3], keepdim=True)
+    # R_sum = R.sum(dim=[1, 2, 3], keepdim=True)
+    # R_new = R_new * (R_sum / (R_new_sum + eps))
     return R_new
 
 def lrp_conv2d_alpha_beta(layer, activation, R, alpha=1, beta=0, eps=1e-2):
@@ -309,5 +311,5 @@ def reverse_batch_norm2d(layer, activation, relevance, eps=1e-2):
 
 def safe_divide(numerator, denominator, eps):
     # Where denominator is not zero, perform the division, otherwise, return zero
-    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps
+    safe_denom = denominator + eps * torch.sign(denominator).detach() + eps * 0.1
     return torch.div(numerator, safe_denom)

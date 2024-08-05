@@ -1,4 +1,4 @@
-conda create --name rl_lrp python=3.11
+conda create --name rl_lrp_3 python=3.11
 
 conda activate rl_lrp
 

@@ -14,7 +14,7 @@ def perform_lrp_plain(image, label, model):
     Returns:
         torch.Tensor: heatmaps of the image
     """
-    assert isinstance(model, WrapperNet), "Model must be a WrapperNet for LRP"
+    # assert isinstance(model, WrapperNet) or isinstance(model, WrapperNetContrastive), "Model must be a WrapperNet for LRP"
     class_idx, output = model(image, label)
     # class_idx, output = model(image)
 
