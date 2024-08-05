@@ -63,12 +63,12 @@ def main():
     global args, best_prec1
     args = parser.parse_args()
 
-    wandb.init(project = "CIFAR10_LRP_mnist",
+    wandb.init(project = "RL-LRPCleanResults",
         sync_tensorboard=True
         )
     wandb.config.update(args)
     extra_args = {
-        'Experiment Class': 'VGG training run (baseline)'
+        'Experiment Class': 'VGG training run: Teacher Model'
     }
     wandb.config.update(extra_args)
 
