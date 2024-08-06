@@ -14,9 +14,10 @@ def perform_lrp_plain(image, label, model):
     Returns:
         torch.Tensor: heatmaps of the image
     """
-    assert isinstance(model, WrapperNet) or isinstance(model, WrapperNetContrastive), "Model must be a WrapperNet for LRP"
+    assert isinstance(model, WrapperNet), "Model must be a WrapperNet for LRP"
     model.eval()
-    class_idx, heatmaps = model(image, label)
+    with torch.no_grad():
+        class_idx, heatmaps = model(image, label)
     # class_idx, output = model(image)
     model.remove_hooks()
     model.reapply_hooks()
@@ -34,7 +35,8 @@ def perform_loss_lrp(image, label, model):
         torch.Tensor: heatmaps of the image
     """
     assert isinstance(model, WrapperNet), "Model must be a WrapperNet for LossLRP"
-    class_idx, output = model(image, label)
+    with torch.no_grad():
+        class_idx, output = model(image, label)
     model.remove_hooks()
     model.reapply_hooks()
     return class_idx, output
