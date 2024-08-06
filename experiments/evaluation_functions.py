@@ -14,11 +14,14 @@ def perform_lrp_plain(image, label, model):
     Returns:
         torch.Tensor: heatmaps of the image
     """
-    # assert isinstance(model, WrapperNet) or isinstance(model, WrapperNetContrastive), "Model must be a WrapperNet for LRP"
-    class_idx, output = model(image, label)
+    assert isinstance(model, WrapperNet) or isinstance(model, WrapperNetContrastive), "Model must be a WrapperNet for LRP"
+    model.eval()
+    class_idx, heatmaps = model(image, label)
     # class_idx, output = model(image)
+    model.remove_hooks()
+    model.reapply_hooks()
 
-    return output
+    return class_idx.argmax(dim=1).detach(), heatmaps
 
 def perform_loss_lrp(image, label, model):
     """Perform LRP on the image using the loss.
@@ -32,7 +35,9 @@ def perform_loss_lrp(image, label, model):
     """
     assert isinstance(model, WrapperNet), "Model must be a WrapperNet for LossLRP"
     class_idx, output = model(image, label)
-    return output
+    model.remove_hooks()
+    model.reapply_hooks()
+    return class_idx, output
 
 def perform_lrp_captum(images, labels, model):
     """Perform LRP on the image using Captum.
@@ -47,8 +52,9 @@ def perform_lrp_captum(images, labels, model):
     lrp = LRP(model)
      # Example target class
     attributions = lrp.attribute(images, target=labels)
+    output = model(images)
     
-    return attributions
+    return output.detach(), attributions
     
 
 def get_input_output_layers(model):
@@ -95,4 +101,7 @@ def perform_gradcam(images, labels, model):
     # Compute GradCAM attributions
     attributions = layer_gc.attribute(images, target=labels)
     
-    return attributions
+    # return the output values
+    output = model(images)
+    
+    return output.detach(), attributions

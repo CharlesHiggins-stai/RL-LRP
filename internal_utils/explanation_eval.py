@@ -8,9 +8,6 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
-import sys
-from experiments import WrapperNet
-from captum.attr import GuidedGradCam
 
 def transform_batch_of_images(images):
     """Apply standard transformation to the batch of images."""
@@ -28,24 +25,45 @@ def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRe
         transforms.CenterCrop(224),
         transforms.ToTensor()
     ])
+    
+    imagenette_train = datasets.Imagenette(
+        root=path,  # Specify the directory to store the dataset
+        split='train',  # Use the validation split
+        transform=transform,
+        download=False  # Download the dataset if not already present
+    )
 
     # Load Imagenette dataset
-    imagenette_train = datasets.Imagenette(
+    imagenette_val = datasets.Imagenette(
         root=path,  # Specify the directory to store the dataset
         split='val',  # Use the validation split
         transform=transform,
         download=False  # Download the dataset if not already present
     )
+    
+
+    train_loader = DataLoader(
+        imagenette_train,
+        batch_size=8,
+        shuffle=True,
+        persistent_workers=True,
+        multiprocessing_context="forkserver",
+        num_workers=4, 
+        pin_memory=True
+    )
 
     # Create a DataLoader
     val_loader = DataLoader(
-        imagenette_train,
-        batch_size=32,
+        imagenette_val,
+        batch_size=8,
         shuffle=False,
-        num_workers=2
+        persistent_workers=True,
+        multiprocessing_context="forkserver",
+        num_workers=4,
+        pin_memory=True
     )
     
-    return val_loader
+    return train_loader, val_loader
 
 def get_data(path_to_data:str = '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data'):
     """Get Dataloader objects from Cifar10 dataset, with path passed in.
@@ -100,6 +118,8 @@ def compute_distance_between_images(images1, images2):
     Returns:
         torch.Tensor: Tensor of distances between the two images
     """
+    if images1.shape[0] == 0 or images2.shape[0] == 0:
+        return None
     # condense images to heatmap
     images1 = condense_to_heatmap(images1)
     images2 = condense_to_heatmap(images2)
@@ -134,8 +154,8 @@ def condense_to_heatmap(images):
     # Normalize each image in the batch independently
     total_sum_per_image = torch.sum(images, dim=(1, 2, 3), keepdim=True)
     normalized_tensor = images / total_sum_per_image
-    print(f"normalized_tensor shape: {normalized_tensor.shape}")
-    print(f"normalized_tensor sum: {torch.sum(normalized_tensor)}")
+    # print(f"normalized_tensor shape: {normalized_tensor.shape}")
+    # print(f"normalized_tensor sum: {torch.sum(normalized_tensor)}")
     # Create heatmap by taking the maximum value across the channel dimension
     heatmaps = torch.max(normalized_tensor, dim=1).values
 
