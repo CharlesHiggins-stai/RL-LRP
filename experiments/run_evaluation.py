@@ -120,29 +120,35 @@ def prune_tensor_to_only_correct_indicies(input_tensor: torch.Tensor,
     return pruned_tensor_heatmaps, pruned_ground_truth_heatmaps
 
 
-def evaluate_performance(model, train_data, test_data):
+def evaluate_performance(model, train_data, test_data, convert_to_imagenet_labels = True):
     """Evaluate the performance of the model on the data"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     train_loss, train_accuracy = [], []
     test_loss, test_accuracy = [], []
     model.to(device)
-    # for i, (input, label) in tqdm(enumerate(train_data)):
-    for i in tqdm(range(0, TRUNCATE)):
-        input, label = next(iter(train_data))
+    for i, (input, label) in tqdm(enumerate(train_data)):
+    # for i in tqdm(range(0, TRUNCATE)):
+        # input, label = next(iter(train_data))
         input = preprocess_images(input).to(device)
-        label = imagenette_to_imagenet_label_mapping_fast(label).to(device)
+        if convert_to_imagenet_labels:
+            label = imagenette_to_imagenet_label_mapping_fast(label).to(device)
+        else:
+            label = label.to(device)
         with torch.no_grad():
             output = model(input)
         loss = torch.nn.functional.cross_entropy(output, label)
         accuracy = (output.argmax(dim=1) == label).float().mean() * 100
         train_loss.append(loss)
         train_accuracy.append(accuracy)
-    # for i, (input, label) in tqdm(enumerate(test_data)):
-    for i in tqdm(range(0, TRUNCATE)):
-        input, label = next(iter(test_data))
+    for i, (input, label) in tqdm(enumerate(test_data)):
+    # for i in tqdm(range(0, TRUNCATE)):
+        # input, label = next(iter(test_data))
         input = preprocess_images(input).to(device)
-        label = imagenette_to_imagenet_label_mapping_fast(label).to(device)
+        if convert_to_imagenet_labels:
+            label = imagenette_to_imagenet_label_mapping_fast(label).to(device)
+        else:
+            label = label.to(device)
         with torch.no_grad():
             output = model(input)
         loss = torch.nn.functional.cross_entropy(output, label)
@@ -150,15 +156,17 @@ def evaluate_performance(model, train_data, test_data):
         test_loss.append(loss)
         test_accuracy.append(accuracy)
     # convert results to dictionary
-    results = {
+    results_train = {
         "train_loss": np.array(train_loss),
-        "train_accuracy": np.array(train_accuracy),
+        "train_accuracy": np.array(train_accuracy)
+    }
+    results_test = {
         "test_loss": np.array(test_loss),
         "test_accuracy": np.array(test_accuracy)
     }
-    return pd.DataFrame.from_dict(results)   
+    return pd.DataFrame.from_dict(results_train), pd.DataFrame.from_dict(results_test)   
 
-def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max):
+def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max, convert_to_imagenet_labels = True):
     """Generate results over a single dataset
 
     Args:
@@ -174,11 +182,14 @@ def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, nois
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     table = {}
-    # for i, (input_batch, input_labels) in tqdm(enumerate(data_loader)):
-    for i in tqdm(range(0, TRUNCATE)):
-        input_batch, input_labels = next(iter(data_loader))
+    for i, (input_batch, input_labels) in tqdm(enumerate(data_loader)):
+    # for i in tqdm(range(0, TRUNCATE)):
+        # input_batch, input_labels = next(iter(data_loader))
         input_batch.to(device)
-        input_labels = imagenette_to_imagenet_label_mapping_fast(input_labels).to(device)    
+        if convert_to_imagenet_labels:
+            input_labels = imagenette_to_imagenet_label_mapping_fast(input_labels).to(device)  
+        else:
+            input_labels = input_labels.to(device)  
         results = process_batch(
             input_batch, 
             input_labels, 
@@ -200,7 +211,7 @@ def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, nois
         # print(f"Processed batch {i+1}/{len(data_loader)}")
     return table    
 
-def evaluate_explanations(train_data, test_data, methods, save_results = False):
+def evaluate_explanations(train_data, test_data, methods, save_results = False, convert_to_imagenet_labels = True):
     """Evaluate the explanations of the model on the data
     
     N.B. Methods is a list in the form (name, method, model) where name is a string, method is a function to generate a heatmap on a certain model
@@ -214,8 +225,8 @@ def evaluate_explanations(train_data, test_data, methods, save_results = False):
     noise_level_max = 0.2
     
     # process datasets
-    train_table = process_dataset(train_data, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max)
-    test_table = process_dataset(test_data, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max)
+    train_table = process_dataset(train_data, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max, convert_to_imagenet_labels)
+    test_table = process_dataset(test_data, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max, convert_to_imagenet_labels)
     # convert to pandas dataframe
     df_train = pd.DataFrame(train_table)
     df_test = pd.DataFrame(test_table)

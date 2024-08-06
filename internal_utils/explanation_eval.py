@@ -65,6 +65,8 @@ def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRe
     
     return train_loader, val_loader
 
+
+
 def get_data(path_to_data:str = '/home/charleshiggins/RL-LRP/baselines/trainVggBaselineForCIFAR10/data'):
     """Get Dataloader objects from Cifar10 dataset, with path passed in.
 
