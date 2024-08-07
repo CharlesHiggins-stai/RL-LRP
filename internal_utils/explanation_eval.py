@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
+from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 
 def transform_batch_of_images(images):
     """Apply standard transformation to the batch of images."""
@@ -111,7 +112,7 @@ def add_random_noise_batch(images, noise_level):
     noisy_images = images + noise
     return noisy_images
 
-def compute_distance_between_images(images1, images2):
+def compute_distance_between_images(images1, images2, compute_ssim=True):
     """Compute the distance between two batches of images.
 
     Args:
@@ -123,16 +124,21 @@ def compute_distance_between_images(images1, images2):
     if images1.shape[0] == 0 or images2.shape[0] == 0:
         return None
     # condense images to heatmap
-    images1 = condense_to_heatmap(images1)
-    images2 = condense_to_heatmap(images2)
-    # Flatten the images to compute cosine similarity
-    images1_flat = images1.view(images1.size(0), -1)
-    images2_flat = images2.view(images2.size(0), -1)
-    
-    # Compute cosine similarity and convert to cosine distance
-    cosine_similarity = F.cosine_similarity(images1_flat, images2_flat)
-    cosine_distance = 1 - cosine_similarity  # Convert similarity to distance
-    return cosine_distance
+    if not compute_ssim:
+        images1 = condense_to_heatmap(images1)
+        images2 = condense_to_heatmap(images2)
+        # Flatten the images to compute cosine similarity
+        images1_flat = images1.view(images1.size(0), -1)
+        images2_flat = images2.view(images2.size(0), -1)
+        
+        # Compute cosine similarity and convert to cosine distance
+        cosine_similarity = F.cosine_similarity(images1_flat, images2_flat)
+        cosine_distance = 1 - cosine_similarity  # Convert similarity to distance
+        return cosine_distance
+    else: 
+        ssim_value = ssim(images1, images2, data_range=1, size_average=False)
+        ssim_distance = 1 - ssim_value
+    return ssim_distance        
 
 
 def condense_to_heatmap(images):
