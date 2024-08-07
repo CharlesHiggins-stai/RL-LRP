@@ -17,5 +17,5 @@ if __name__ == "__main__":
     ]
     # now evaluate explanations
     print("WARNING: EVAULUATING EXPLANATIONS IS TOO COMPUTATIONALLY INTENSE FOR A NOTEBOOK. WE SUGGEST RUNNING THIS IN A SCRIPT, AND LOADING THE RESULTS FROM .csv FILES FOR ANALYSIS.")
-    df_train, df_test = evaluate_explanations(train_data, test_data, methods, save_results = True, convert_to_imagenet_labels=False)
+    df_train, df_test = evaluate_explanations(train_data, test_data, methods, save_results = True, convert_to_imagenet_labels=False, save_title="polarised_results")
     print('run complete')

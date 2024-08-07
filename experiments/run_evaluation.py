@@ -213,7 +213,7 @@ def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, nois
         # print(f"Processed batch {i+1}/{len(data_loader)}")
     return table    
 
-def evaluate_explanations(train_data, test_data, methods, save_results = False, convert_to_imagenet_labels = True, save_title = ""):
+def evaluate_explanations(train_data, test_data, methods, save_results = False, convert_to_imagenet_labels = True, save_title = "polarised"):
     """Evaluate the explanations of the model on the data
     
     N.B. Methods is a list in the form (name, method, model) where name is a string, method is a function to generate a heatmap on a certain model
@@ -221,10 +221,10 @@ def evaluate_explanations(train_data, test_data, methods, save_results = False, 
     """
     
     # define params
-    kernel_size_min = 3
-    kernel_size_max = 5
-    noise_level_min = 0.1
-    noise_level_max = 0.2
+    kernel_size_min = 1
+    kernel_size_max = 7
+    noise_level_min = 0.05
+    noise_level_max = 0.3
     
     # process datasets
     train_table = process_dataset(train_data, methods, kernel_size_min, kernel_size_max, noise_level_min, noise_level_max, convert_to_imagenet_labels)
@@ -240,7 +240,7 @@ def evaluate_explanations(train_data, test_data, methods, save_results = False, 
     return df_train, df_test
 
 
-def visualise_panel_image(image, model, kernel_size_min=3, kernel_size_max=5, noise_level_min=0.1, noise_level_max=0.2, method=perform_lrp_plain, label="LRP"):
+def visualise_panel_image(image, model, kernel_size_min=1, kernel_size_max=7, noise_level_min=0.05, noise_level_max=0.3, method=perform_lrp_plain, label="LRP"):
     """Visualise the panel of images for the model."""
     # Assume the image tensor is already in batch format, if not, unsqueeze it
     if image.dim() == 3:

@@ -18,7 +18,7 @@ def transform_batch_of_images(images):
     to_tensor_transform = transforms.ToTensor()
     return normalize_transform(to_tensor_transform(images))
 
-def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP/data/Imagenette"):
+def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_intervention/RL-LRP/data/Imagenette", batch_size = 8, shuffle = False):
     # Define transformations
     transform = transforms.Compose([
         transforms.Resize(256),
@@ -44,8 +44,8 @@ def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRe
 
     train_loader = DataLoader(
         imagenette_train,
-        batch_size=8,
-        shuffle=True,
+        batch_size=batch_size,
+        shuffle=shuffle,
         persistent_workers=True,
         multiprocessing_context="forkserver",
         num_workers=4, 
@@ -55,8 +55,8 @@ def get_data_imagenette(path = "/Users/charleshiggins/Personal/CharlesPhD/CodeRe
     # Create a DataLoader
     val_loader = DataLoader(
         imagenette_val,
-        batch_size=8,
-        shuffle=False,
+        batch_size=batch_size,
+        shuffle=shuffle,
         persistent_workers=True,
         multiprocessing_context="forkserver",
         num_workers=4,
