@@ -4,7 +4,9 @@ import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from internal_utils import get_data_imagenette, get_teacher_model, preprocess_images, add_random_noise_batch, blur_image_batch, compute_distance_between_images, compute_sparseness_of_heatmap, imagenette_to_imagenet_label_mapping_fast
+import seaborn as sns
+import matplotlib.pyplot as plt
+from internal_utils import get_data_imagenette, get_teacher_model, preprocess_images, add_random_noise_batch, blur_image_batch, compute_distance_between_images, compute_sparseness_of_heatmap, imagenette_to_imagenet_label_mapping_fast, condense_to_heatmap
 from .evaluation_functions import perform_lrp_plain, perform_gradcam
 TRUNCATE = 10
 # Load data
@@ -59,7 +61,7 @@ def process_batch(
         distance_blur_small = compute_distance_between_images(ground_truth_heatmap, blurred_heatmaps_small)
         distance_blur_large = compute_distance_between_images(ground_truth_heatmap, blurred_heatmaps_large)
         # calculate sparseness of heatmap
-        sparseness_original, sparseness_gini = compute_sparseness_of_heatmap(ground_truth_heatmap)
+        # sparseness_original, sparseness_gini = compute_sparseness_of_heatmap(ground_truth_heatmap)
         # store the results in the dictionary
         results_dictionary[f"{name}_distance_noise_small"] = distance_noise_small
         results_dictionary[f"{name}_distance_noise_small_class_change"] = noisy_heatmaps_small_class_change
@@ -69,8 +71,8 @@ def process_batch(
         results_dictionary[f"{name}_distance_blur_small_class_change"] = blurred_heatmaps_small_class_change
         results_dictionary[f"{name}_distance_blur_large"] = distance_blur_large
         results_dictionary[f"{name}_distance_blur_large_class_change"] = blurred_heatmaps_large_class_change
-        results_dictionary[f"{name}_sparseness_original"] = sparseness_original
-        results_dictionary[f"{name}_sparseness_gini"] = sparseness_gini
+        # results_dictionary[f"{name}_sparseness_original"] = sparseness_original
+        # results_dictionary[f"{name}_sparseness_gini"] = sparseness_gini
     # return data
     return results_dictionary
 
@@ -211,7 +213,7 @@ def process_dataset(data_loader, methods, kernel_size_min, kernel_size_max, nois
         # print(f"Processed batch {i+1}/{len(data_loader)}")
     return table    
 
-def evaluate_explanations(train_data, test_data, methods, save_results = False, convert_to_imagenet_labels = True):
+def evaluate_explanations(train_data, test_data, methods, save_results = False, convert_to_imagenet_labels = True, save_title = ""):
     """Evaluate the explanations of the model on the data
     
     N.B. Methods is a list in the form (name, method, model) where name is a string, method is a function to generate a heatmap on a certain model
@@ -233,11 +235,60 @@ def evaluate_explanations(train_data, test_data, methods, save_results = False, 
     
     # save results
     if save_results:
-        df_train.to_csv("train_results.csv")
-        df_test.to_csv("test_results.csv")
+        df_train.to_csv(f"explanation_evaluation_CIFAR10_{save_title}_train_results.csv")
+        df_test.to_csv(f"explanation_evaluation_CIFAR10_{save_title}_test_results.csv")
     return df_train, df_test
 
 
+def visualise_panel_image(image, model, kernel_size_min=3, kernel_size_max=5, noise_level_min=0.1, noise_level_max=0.2, method=perform_lrp_plain, label="LRP"):
+    """Visualise the panel of images for the model."""
+    # Assume the image tensor is already in batch format, if not, unsqueeze it
+    if image.dim() == 3:
+        image = image.unsqueeze(0)
+    
+    original_image = image
+    # treated images
+    blurred_small = blur_image_batch(image, kernel_size_min)
+    blurred_large = blur_image_batch(image, kernel_size_max)
+    noisy_small = add_random_noise_batch(image, noise_level_min)
+    noisy_large = add_random_noise_batch(image, noise_level_max)
+    
+    # model outputs
+    original_heatmap = condense_to_heatmap(method(preprocess_images(image), label, model, return_output=False)).detach()
+    blurred_small_heatmap = condense_to_heatmap(method(preprocess_images(blurred_small), label, model, return_output=False)).detach()
+    blurred_large_heatmap = condense_to_heatmap(method(preprocess_images(blurred_large),label,  model, return_output=False)).detach()
+    noisy_small_heatmap = condense_to_heatmap( method(preprocess_images(noisy_small), label, model, return_output=False)).detach()
+    noisy_large_heatmap = condense_to_heatmap(method(preprocess_images(noisy_large), label, model, return_output=False)).detach()
+    
+    # Display images
+    fig, ax = plt.subplots(2, 5, figsize=(15, 5))
+    ax[0][0].imshow(original_image.squeeze().permute(1, 2, 0).cpu().numpy())
+    ax[0][0].set_title('Original Image')
+    ax[0][1].imshow(blurred_small.squeeze().permute(1, 2, 0).cpu().numpy())
+    ax[0][1].set_title('Small Blurred Image')
+    ax[0][2].imshow(blurred_large.squeeze().permute(1, 2, 0).cpu().numpy())
+    ax[0][2].set_title('Large Blurred Image')
+    ax[0][3].imshow(noisy_small.squeeze().detach().permute(1, 2, 0).cpu().numpy())  # Example visualization
+    ax[0][3].set_title('Small Noisy Image')
+    ax[0][4].imshow(noisy_large.squeeze().detach().permute(1, 2, 0).cpu().numpy())  # Example visualization
+    ax[0][4].set_title('Large Noisy Image')
+    
+    ax[1][0].imshow(original_heatmap.squeeze(0), cmap='seismic')
+    ax[1][0].set_title('Original Heatmap')
+    ax[1][1].imshow(blurred_small_heatmap.squeeze(0), cmap='seismic')
+    ax[1][1].set_title('Small Blurred Heatmap')
+    ax[1][2].imshow(blurred_large_heatmap.squeeze(0), cmap='seismic')
+    ax[1][2].set_title('Large Blurred Heatmap')
+    ax[1][3].imshow(noisy_small_heatmap.squeeze(0), cmap ='seismic')  # Example visualization
+    ax[1][3].set_title('Small Noisy Heatmap')
+    ax[1][4].imshow(noisy_large_heatmap.squeeze(0), cmap ='seismic')  # Example visualization
+    ax[1][4].set_title('Large Noisy Heatmap')
+    fig.suptitle(f"{label}")
+    
+    for i in ax:
+        for j in i:
+            j.axis('off')
+    plt.show()
 
 def main():
     # define params
@@ -281,4 +332,4 @@ def main():
     df = pd.DataFrame(table)
     # save results
     df.to_csv("test_results.csv")
-    
+

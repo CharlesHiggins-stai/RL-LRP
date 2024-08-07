@@ -4,7 +4,7 @@ sys.path.append('/Users/charleshiggins/Personal/CharlesPhD/CodeRepo/xai_interven
 from experiments import WrapperNet
 from captum.attr import GuidedGradCam, LRP
 
-def perform_lrp_plain(image, label, model):
+def perform_lrp_plain(image, label, model, return_output=True):
     """Perform LRP on the image.
 
     Args:
@@ -21,10 +21,12 @@ def perform_lrp_plain(image, label, model):
     # class_idx, output = model(image)
     model.remove_hooks()
     model.reapply_hooks()
+    if return_output:
+        return class_idx.argmax(dim=1).detach(), heatmaps
+    else:
+        return heatmaps
 
-    return class_idx.argmax(dim=1).detach(), heatmaps
-
-def perform_loss_lrp(image, label, model):
+def perform_loss_lrp(image, label, model, return_output=True):
     """Perform LRP on the image using the loss.
 
     Args:
@@ -39,9 +41,12 @@ def perform_loss_lrp(image, label, model):
         class_idx, output = model(image, label)
     model.remove_hooks()
     model.reapply_hooks()
-    return class_idx, output
+    if return_output:
+        return class_idx, output
+    else:
+        return output
 
-def perform_lrp_captum(images, labels, model):
+def perform_lrp_captum(images, labels, model, return_output=True):
     """Perform LRP on the image using Captum.
     
     Args:
@@ -56,7 +61,10 @@ def perform_lrp_captum(images, labels, model):
     attributions = lrp.attribute(images, target=labels)
     output = model(images)
     
-    return output.detach(), attributions
+    if return_output:
+        return output.detach(), attributions
+    else: 
+        return attributions
     
 
 def get_input_output_layers(model):
@@ -81,7 +89,7 @@ def get_input_output_layers(model):
     
     return input_layer, output_layer
 
-def perform_gradcam(images, labels, model):
+def perform_gradcam(images, labels, model, return_output=True):
     """Perform GradCAM on the image.
 
     Args:
@@ -105,5 +113,7 @@ def perform_gradcam(images, labels, model):
     
     # return the output values
     output = model(images)
-    
-    return output.detach(), attributions
+    if return_output:
+        return output.detach(), attributions
+    else:
+        return attributions
